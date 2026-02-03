@@ -1,6 +1,7 @@
 # Build output directories
 build/
 bin/
+dist/
 
 # Prerequisites
 *.d
@@ -57,3 +58,6 @@ dkms.conf
 
 # debug information files
 *.dwo
+
+# Node modules
+node_modules/

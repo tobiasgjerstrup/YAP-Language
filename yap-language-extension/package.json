@@ -1,0 +1,50 @@
+{
+  "name": "yap-language",
+  "displayName": "YAP Language",
+  "description": "Syntax highlighting for YAP programming language",
+  "version": "0.0.2",
+  "publisher": "tobias",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tobia/YAP-Language"
+  },
+  "main": "./dist/extension.js",
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "vsce package"
+  },
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "devDependencies": {
+    "@types/node": "^18.0.0",
+    "@types/vscode": "^1.75.0",
+    "typescript": "^5.0.0"
+  },
+  "contributes": {
+    "languages": [
+      {
+        "id": "yap",
+        "aliases": [
+          "YAP",
+          "yap"
+        ],
+        "extensions": [
+          ".yap"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "yap",
+        "scopeName": "source.yap",
+        "path": "./syntaxes/yap.tmLanguage.json"
+      }
+    ]
+  }
+}

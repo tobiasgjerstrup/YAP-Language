@@ -1,0 +1,50 @@
+{
+  "name": "YAP",
+  "scopeName": "source.yap",
+  "fileTypes": ["yap"],
+  "patterns": [
+    {
+      "name": "comment.line.double-slash",
+      "match": "//.*$"
+    },
+    {
+      "name": "keyword.control",
+      "match": "\\b(if|else|while|return)\\b"
+    },
+    {
+      "name": "keyword.declaration",
+      "match": "\\b(var|fn)\\b"
+    },
+    {
+      "name": "constant.language",
+      "match": "\\b(print|true|false)\\b"
+    },
+    {
+      "name": "string.quoted.double",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [
+        {
+          "name": "constant.character.escape",
+          "match": "\\\\."
+        }
+      ]
+    },
+    {
+      "name": "constant.numeric",
+      "match": "\\b\\d+\\b"
+    },
+    {
+      "name": "variable.other.readwrite",
+      "match": "\\b[a-zA-Z_][a-zA-Z0-9_]*\\b"
+    },
+    {
+      "name": "keyword.operator",
+      "match": "(\\+|-|\\*|/|%|==|!=|<=|>=|<|>|&&|\\|\\||!|=)"
+    },
+    {
+      "name": "punctuation.separator",
+      "match": "(;|,|\\(|\\)|\\{|\\})"
+    }
+  ]
+}
