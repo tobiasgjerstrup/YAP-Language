@@ -1,0 +1,446 @@
+#include "parser.h"
+#include <stdlib.h>
+#include <string.h>
+#include <stdio.h>
+
+Parser* parser_create(const char *source) {
+    Parser *parser = malloc(sizeof(Parser));
+    parser->lexer = lexer_create(source);
+    parser->current_token = lexer_next_token(parser->lexer);
+    parser->error = 0;
+    strcpy(parser->error_msg, "");
+    return parser;
+}
+
+void parser_destroy(Parser *parser) {
+    if (parser) {
+        token_free(parser->current_token);
+        lexer_destroy(parser->lexer);
+        free(parser);
+    }
+}
+
+static void advance(Parser *parser) {
+    token_free(parser->current_token);
+    parser->current_token = lexer_next_token(parser->lexer);
+}
+
+static void set_error(Parser *parser, const char *msg) {
+    parser->error = 1;
+    strncpy(parser->error_msg, msg, 255);
+    parser->error_msg[255] = '\0';
+}
+
+static int match(Parser *parser, TokenType type) {
+    return parser->current_token.type == type;
+}
+
+static int check(Parser *parser, TokenType type) {
+    return parser->current_token.type == type;
+}
+
+static void consume(Parser *parser, TokenType type, const char *msg) {
+    if (!check(parser, type)) {
+        set_error(parser, msg);
+    }
+    advance(parser);
+}
+
+// Forward declarations
+static ASTNode* parse_statement(Parser *parser);
+static ASTNode* parse_expression(Parser *parser);
+
+static ASTNode* parse_primary(Parser *parser) {
+    if (match(parser, TOKEN_INT)) {
+        int value = atoi(parser->current_token.value);
+        advance(parser);
+        return ast_create_int_literal(value);
+    }
+    
+    if (match(parser, TOKEN_STRING)) {
+        char *value = malloc(strlen(parser->current_token.value) + 1);
+        strcpy(value, parser->current_token.value);
+        advance(parser);
+        ASTNode *node = ast_create_string_literal(value);
+        free(value);
+        return node;
+    }
+    
+    if (match(parser, TOKEN_TRUE)) {
+        advance(parser);
+        return ast_create_bool_literal(1);
+    }
+    
+    if (match(parser, TOKEN_FALSE)) {
+        advance(parser);
+        return ast_create_bool_literal(0);
+    }
+    
+    if (match(parser, TOKEN_IDENTIFIER)) {
+        char *name = malloc(strlen(parser->current_token.value) + 1);
+        strcpy(name, parser->current_token.value);
+        advance(parser);
+        
+        // Check for function call
+        if (match(parser, TOKEN_LPAREN)) {
+            advance(parser);
+            
+            ASTNode **args = NULL;
+            int arg_count = 0;
+            
+            if (!check(parser, TOKEN_RPAREN)) {
+                args = malloc(sizeof(ASTNode*) * 256);
+                args[arg_count++] = parse_expression(parser);
+                
+                while (match(parser, TOKEN_COMMA)) {
+                    advance(parser);
+                    args[arg_count++] = parse_expression(parser);
+                }
+            }
+            
+            consume(parser, TOKEN_RPAREN, "Expected ')'");
+            ASTNode *node = ast_create_call(name, args, arg_count);
+            free(name);
+            return node;
+        }
+        
+        ASTNode *node = ast_create_identifier(name);
+        free(name);
+        return node;
+    }
+    
+    if (match(parser, TOKEN_LPAREN)) {
+        advance(parser);
+        ASTNode *expr = parse_expression(parser);
+        consume(parser, TOKEN_RPAREN, "Expected ')'");
+        return expr;
+    }
+    
+    if (match(parser, TOKEN_NOT)) {
+        advance(parser);
+        ASTNode *operand = parse_primary(parser);
+        return ast_create_unary_op(operand, "!");
+    }
+    
+    if (match(parser, TOKEN_MINUS)) {
+        advance(parser);
+        ASTNode *operand = parse_primary(parser);
+        return ast_create_unary_op(operand, "-");
+    }
+    
+    set_error(parser, "Unexpected token in expression");
+    return NULL;
+}
+
+static ASTNode* parse_term(Parser *parser) {
+    ASTNode *node = parse_primary(parser);
+    
+    while (match(parser, TOKEN_MUL) || match(parser, TOKEN_DIV) || match(parser, TOKEN_MOD)) {
+        char op[2];
+        if (match(parser, TOKEN_MUL)) {
+            strcpy(op, "*");
+        } else if (match(parser, TOKEN_DIV)) {
+            strcpy(op, "/");
+        } else {
+            strcpy(op, "%");
+        }
+        advance(parser);
+        ASTNode *right = parse_primary(parser);
+        node = ast_create_binary_op(node, right, op);
+    }
+    
+    return node;
+}
+
+static ASTNode* parse_additive(Parser *parser) {
+    ASTNode *node = parse_term(parser);
+    
+    while (match(parser, TOKEN_PLUS) || match(parser, TOKEN_MINUS)) {
+        char op[2];
+        if (match(parser, TOKEN_PLUS)) {
+            strcpy(op, "+");
+        } else {
+            strcpy(op, "-");
+        }
+        advance(parser);
+        ASTNode *right = parse_term(parser);
+        node = ast_create_binary_op(node, right, op);
+    }
+    
+    return node;
+}
+
+static ASTNode* parse_comparison(Parser *parser) {
+    ASTNode *node = parse_additive(parser);
+    
+    while (match(parser, TOKEN_LT) || match(parser, TOKEN_LTE) || 
+           match(parser, TOKEN_GT) || match(parser, TOKEN_GTE) ||
+           match(parser, TOKEN_EQ) || match(parser, TOKEN_NEQ)) {
+        char op[3];
+        if (match(parser, TOKEN_LT)) {
+            strcpy(op, "<");
+        } else if (match(parser, TOKEN_LTE)) {
+            strcpy(op, "<=");
+        } else if (match(parser, TOKEN_GT)) {
+            strcpy(op, ">");
+        } else if (match(parser, TOKEN_GTE)) {
+            strcpy(op, ">=");
+        } else if (match(parser, TOKEN_EQ)) {
+            strcpy(op, "==");
+        } else {
+            strcpy(op, "!=");
+        }
+        advance(parser);
+        ASTNode *right = parse_additive(parser);
+        node = ast_create_binary_op(node, right, op);
+    }
+    
+    return node;
+}
+
+static ASTNode* parse_logical_and(Parser *parser) {
+    ASTNode *node = parse_comparison(parser);
+    
+    while (match(parser, TOKEN_AND)) {
+        advance(parser);
+        ASTNode *right = parse_comparison(parser);
+        node = ast_create_binary_op(node, right, "&&");
+    }
+    
+    return node;
+}
+
+static ASTNode* parse_logical_or(Parser *parser) {
+    ASTNode *node = parse_logical_and(parser);
+    
+    while (match(parser, TOKEN_OR)) {
+        advance(parser);
+        ASTNode *right = parse_logical_and(parser);
+        node = ast_create_binary_op(node, right, "||");
+    }
+    
+    return node;
+}
+
+static ASTNode* parse_expression(Parser *parser) {
+    return parse_logical_or(parser);
+}
+
+static ASTNode* parse_var_decl(Parser *parser) {
+    consume(parser, TOKEN_VAR, "Expected 'var'");
+    
+    if (!match(parser, TOKEN_IDENTIFIER)) {
+        set_error(parser, "Expected identifier after 'var'");
+        return NULL;
+    }
+    
+    char *name = malloc(strlen(parser->current_token.value) + 1);
+    strcpy(name, parser->current_token.value);
+    advance(parser);
+    
+    ASTNode *value = NULL;
+    if (match(parser, TOKEN_ASSIGN)) {
+        advance(parser);
+        value = parse_expression(parser);
+    }
+    
+    consume(parser, TOKEN_SEMICOLON, "Expected ';'");
+    
+    ASTNode *node = ast_create_var_decl(name, value);
+    free(name);
+    return node;
+}
+
+static ASTNode* parse_block(Parser *parser) {
+    consume(parser, TOKEN_LBRACE, "Expected '{'");
+    
+    ASTNode **statements = malloc(sizeof(ASTNode*) * 256);
+    int count = 0;
+    
+    while (!check(parser, TOKEN_RBRACE) && !check(parser, TOKEN_EOF) && !parser->error) {
+        statements[count++] = parse_statement(parser);
+    }
+    
+    consume(parser, TOKEN_RBRACE, "Expected '}'");
+    
+    return ast_create_block(statements, count);
+}
+
+static ASTNode* parse_if_stmt(Parser *parser) {
+    consume(parser, TOKEN_IF, "Expected 'if'");
+    consume(parser, TOKEN_LPAREN, "Expected '('");
+    ASTNode *condition = parse_expression(parser);
+    consume(parser, TOKEN_RPAREN, "Expected ')'");
+    
+    ASTNode *then_branch = NULL;
+    if (match(parser, TOKEN_LBRACE)) {
+        then_branch = parse_block(parser);
+    } else {
+        then_branch = parse_statement(parser);
+    }
+    
+    ASTNode *else_branch = NULL;
+    if (match(parser, TOKEN_ELSE)) {
+        advance(parser);
+        if (match(parser, TOKEN_LBRACE)) {
+            else_branch = parse_block(parser);
+        } else {
+            else_branch = parse_statement(parser);
+        }
+    }
+    
+    return ast_create_if_stmt(condition, then_branch, else_branch);
+}
+
+static ASTNode* parse_while_stmt(Parser *parser) {
+    consume(parser, TOKEN_WHILE, "Expected 'while'");
+    consume(parser, TOKEN_LPAREN, "Expected '('");
+    ASTNode *condition = parse_expression(parser);
+    consume(parser, TOKEN_RPAREN, "Expected ')'");
+    
+    ASTNode *body = NULL;
+    if (match(parser, TOKEN_LBRACE)) {
+        body = parse_block(parser);
+    } else {
+        body = parse_statement(parser);
+    }
+    
+    return ast_create_while_stmt(condition, body);
+}
+
+static ASTNode* parse_return_stmt(Parser *parser) {
+    consume(parser, TOKEN_RETURN, "Expected 'return'");
+    
+    ASTNode *value = NULL;
+    if (!match(parser, TOKEN_SEMICOLON)) {
+        value = parse_expression(parser);
+    }
+    
+    consume(parser, TOKEN_SEMICOLON, "Expected ';'");
+    return ast_create_return_stmt(value);
+}
+
+static ASTNode* parse_print_stmt(Parser *parser) {
+    consume(parser, TOKEN_PRINT, "Expected 'print'");
+    consume(parser, TOKEN_LPAREN, "Expected '('");
+    ASTNode *value = parse_expression(parser);
+    consume(parser, TOKEN_RPAREN, "Expected ')'");
+    consume(parser, TOKEN_SEMICOLON, "Expected ';'");
+    
+    return ast_create_print_stmt(value);
+}
+
+static ASTNode* parse_func_decl(Parser *parser) {
+    consume(parser, TOKEN_FN, "Expected 'fn'");
+    
+    if (!match(parser, TOKEN_IDENTIFIER)) {
+        set_error(parser, "Expected function name");
+        return NULL;
+    }
+    
+    char *name = malloc(strlen(parser->current_token.value) + 1);
+    strcpy(name, parser->current_token.value);
+    advance(parser);
+    
+    consume(parser, TOKEN_LPAREN, "Expected '('");
+    
+    char **params = NULL;
+    int param_count = 0;
+    
+    if (!check(parser, TOKEN_RPAREN)) {
+        params = malloc(sizeof(char*) * 256);
+        
+        if (match(parser, TOKEN_IDENTIFIER)) {
+            params[param_count] = malloc(strlen(parser->current_token.value) + 1);
+            strcpy(params[param_count], parser->current_token.value);
+            param_count++;
+            advance(parser);
+            
+            while (match(parser, TOKEN_COMMA)) {
+                advance(parser);
+                if (match(parser, TOKEN_IDENTIFIER)) {
+                    params[param_count] = malloc(strlen(parser->current_token.value) + 1);
+                    strcpy(params[param_count], parser->current_token.value);
+                    param_count++;
+                    advance(parser);
+                }
+            }
+        }
+    }
+    
+    consume(parser, TOKEN_RPAREN, "Expected ')'");
+    
+    ASTNode *body = parse_block(parser);
+    
+    ASTNode *node = ast_create_func_decl(name, params, param_count, body);
+    free(name);
+    return node;
+}
+
+static ASTNode* parse_assignment_or_expression(Parser *parser) {
+    ASTNode *expr = parse_expression(parser);
+    
+    if (match(parser, TOKEN_ASSIGN)) {
+        if (expr->type == NODE_IDENTIFIER) {
+            char *name = malloc(strlen(expr->data.identifier.name) + 1);
+            strcpy(name, expr->data.identifier.name);
+            
+            advance(parser);
+            ASTNode *value = parse_expression(parser);
+            consume(parser, TOKEN_SEMICOLON, "Expected ';'");
+            
+            ast_free(expr);
+            ASTNode *node = ast_create_assignment(name, value);
+            free(name);
+            return node;
+        }
+    }
+    
+    consume(parser, TOKEN_SEMICOLON, "Expected ';'");
+    return expr;
+}
+
+static ASTNode* parse_statement(Parser *parser) {
+    if (parser->error) return NULL;
+    
+    if (match(parser, TOKEN_VAR)) {
+        return parse_var_decl(parser);
+    }
+    
+    if (match(parser, TOKEN_FN)) {
+        return parse_func_decl(parser);
+    }
+    
+    if (match(parser, TOKEN_IF)) {
+        return parse_if_stmt(parser);
+    }
+    
+    if (match(parser, TOKEN_WHILE)) {
+        return parse_while_stmt(parser);
+    }
+    
+    if (match(parser, TOKEN_RETURN)) {
+        return parse_return_stmt(parser);
+    }
+    
+    if (match(parser, TOKEN_PRINT)) {
+        return parse_print_stmt(parser);
+    }
+    
+    if (match(parser, TOKEN_LBRACE)) {
+        return parse_block(parser);
+    }
+    
+    return parse_assignment_or_expression(parser);
+}
+
+ASTNode* parser_parse(Parser *parser) {
+    ASTNode **statements = malloc(sizeof(ASTNode*) * 1024);
+    int count = 0;
+    
+    while (!check(parser, TOKEN_EOF) && !parser->error) {
+        statements[count++] = parse_statement(parser);
+    }
+    
+    return ast_create_program(statements, count);
+}
