@@ -235,7 +235,15 @@ static VarType expr_is_string(Codegen *cg, ASTNode *node) {
     if (node->type == NODE_STRING_LITERAL) return TYPE_STRING;
     if (node->type == NODE_BOOL_LITERAL) return TYPE_BOOL;
     if (node->type == NODE_ARRAY_LITERAL) return TYPE_ARRAY;
-    if (node->type == NODE_ARRAY_INDEX) return TYPE_INT;  // Array indexing returns element (usually int)
+    if (node->type == NODE_ARRAY_INDEX) {
+        // Special case: args[index] is a string
+        if (node->data.array_index.array && node->data.array_index.array->type == NODE_IDENTIFIER) {
+            if (strcmp(node->data.array_index.array->data.identifier.name, "args") == 0) {
+                return TYPE_STRING;
+            }
+        }
+        return TYPE_INT;  // Default element type
+    }
     if (node->type == NODE_IDENTIFIER) return get_local_type(cg, node->data.identifier.name);
     if (node->type == NODE_BINARY_OP) {
         const char *op = node->data.binary_op.op;
@@ -1042,6 +1050,65 @@ static void emit_runtime_helpers(Codegen *cg) {
     emit(cg, "    pop rbx\n");
     emit(cg, "    pop rbp\n");
     emit(cg, "    ret\n");
+
+    // yap_build_args(rdi=argc, rsi=argv) -> rax=args array
+    emit(cg, "\n.globl yap_build_args\n");
+    emit(cg, ".type yap_build_args, @function\n");
+    emit(cg, "yap_build_args:\n");
+    emit(cg, "    push rbp\n");
+    emit(cg, "    mov rbp, rsp\n");
+    emit(cg, "    push rbx\n");
+    emit(cg, "    push r12\n");
+    emit(cg, "    push r13\n");
+    emit(cg, "    push r14\n");
+    emit(cg, "    sub rsp, 8\n");
+
+    // rdi = argc, rsi = argv
+    emit(cg, "    mov r12, rdi\n");           // r12 = argc
+    emit(cg, "    mov r13, rsi\n");           // r13 = argv
+
+    // If argc <= 1, return empty array
+    emit(cg, "    cmp r12, 1\n");
+    emit(cg, "    jg .args_nonempty\n");
+    emit(cg, "    mov rdi, 8\n");             // size for length only
+    emit(cg, "    call malloc@PLT\n");
+    emit(cg, "    mov rbx, rax\n");
+    emit(cg, "    mov QWORD PTR [rbx], 0\n");
+    emit(cg, "    mov rax, rbx\n");
+    emit(cg, "    jmp .args_done\n");
+
+    emit(cg, ".args_nonempty:\n");
+    // Allocate (argc) * 8 bytes: length + (argc - 1) elements
+    emit(cg, "    mov rax, r12\n");
+    emit(cg, "    imul rax, 8\n");
+    emit(cg, "    mov rdi, rax\n");
+    emit(cg, "    call malloc@PLT\n");
+    emit(cg, "    mov rbx, rax\n");
+
+    // length = argc - 1
+    emit(cg, "    mov rax, r12\n");
+    emit(cg, "    sub rax, 1\n");
+    emit(cg, "    mov [rbx], rax\n");
+
+    // Copy argv[1..argc-1] into array
+    emit(cg, "    mov rcx, 1\n");
+    emit(cg, ".args_loop:\n");
+    emit(cg, "    cmp rcx, r12\n");
+    emit(cg, "    jge .args_done\n");
+    emit(cg, "    mov rdx, [r13 + rcx*8]\n");
+    emit(cg, "    mov [rbx + rcx*8], rdx\n");
+    emit(cg, "    inc rcx\n");
+    emit(cg, "    jmp .args_loop\n");
+
+    emit(cg, ".args_done:\n");
+    emit(cg, "    mov rax, rbx\n");
+    emit(cg, "    add rsp, 8\n");
+    emit(cg, "    pop r14\n");
+    emit(cg, "    pop r13\n");
+    emit(cg, "    pop r12\n");
+    emit(cg, "    pop rbx\n");
+    emit(cg, "    pop rbp\n");
+    emit(cg, "    ret\n");
 }
 
 static int emit_assembly(Codegen *cg, ASTNode *program, const char *asm_path) {
@@ -1101,6 +1168,15 @@ static int emit_assembly(Codegen *cg, ASTNode *program, const char *asm_path) {
 
     free_locals(cg);
 
+    int args_idx = add_local(cg, "args");
+    if (args_idx < 0) {
+        set_error(cg, NULL, "Too many locals");
+        fclose(cg->out);
+        cg->out = NULL;
+        return 1;
+    }
+    set_local_type(cg, "args", TYPE_ARRAY);
+
     // Collect local variables for main
     for (int i = 0; i < program->statement_count; i++) {
         ASTNode *stmt = program->statements[i];
@@ -1120,6 +1196,11 @@ static int emit_assembly(Codegen *cg, ASTNode *program, const char *asm_path) {
     if (cg->stack_size > 0) {
         emit(cg, "    sub rsp, %d\n", cg->stack_size);
     }
+
+    // Initialize args from argc/argv
+    emit(cg, "    xor eax, eax\n");
+    emit(cg, "    call yap_build_args\n");
+    emit(cg, "    mov QWORD PTR [rbp-%d], rax\n", cg->locals[args_idx].offset);
 
     cg->current_function_name = "main";
     gen_stmt(cg, program);
