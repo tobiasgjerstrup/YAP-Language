@@ -32,6 +32,13 @@ Value value_create_null() {
     return v;
 }
 
+static Value value_copy(Value v) {
+    if (v.type == VALUE_STRING && v.data.string_val) {
+        return value_create_string(v.data.string_val);
+    }
+    return v;
+}
+
 void value_free(Value v) {
     if (v.type == VALUE_STRING && v.data.string_val) {
         free(v.data.string_val);
@@ -206,10 +213,20 @@ static Value eval_binary_op(Interpreter *interp, ASTNode *node) {
         result = value_create_int(value_to_int(left) * value_to_int(right));
     } else if (strcmp(op, "/") == 0) {
         int r = value_to_int(right);
-        result = value_create_int(r != 0 ? value_to_int(left) / r : 0);
+        if (r == 0) {
+            fprintf(stderr, "Runtime Error: Line %d:%d: Division by zero\n", node->line, node->column);
+            result = value_create_int(0);
+        } else {
+            result = value_create_int(value_to_int(left) / r);
+        }
     } else if (strcmp(op, "%") == 0) {
         int r = value_to_int(right);
-        result = value_create_int(r != 0 ? value_to_int(left) % r : 0);
+        if (r == 0) {
+            fprintf(stderr, "Runtime Error: Line %d:%d: Modulo by zero\n", node->line, node->column);
+            result = value_create_int(0);
+        } else {
+            result = value_create_int(value_to_int(left) % r);
+        }
     } else if (strcmp(op, "<") == 0) {
         result = value_create_bool(value_to_int(left) < value_to_int(right));
     } else if (strcmp(op, "<=") == 0) {
@@ -269,13 +286,14 @@ static Value eval_call(Interpreter *interp, ASTNode *node) {
     Function *func = find_function(interp, node->data.call.name);
     
     if (!func) {
-        fprintf(stderr, "Error: Function '%s' not found\n", node->data.call.name);
+        fprintf(stderr, "Runtime Error: Line %d:%d: Function '%s' not found\n", 
+                node->line, node->column, node->data.call.name);
         return value_create_null();
     }
     
     if (node->data.call.arg_count != func->param_count) {
-        fprintf(stderr, "Error: Function '%s' expects %d arguments, got %d\n",
-                node->data.call.name, func->param_count, node->data.call.arg_count);
+        fprintf(stderr, "Runtime Error: Line %d:%d: Function '%s' expects %d arguments, got %d\n",
+                node->line, node->column, node->data.call.name, func->param_count, node->data.call.arg_count);
         return value_create_null();
     }
     
@@ -400,7 +418,7 @@ static Value eval_node(Interpreter *interp, ASTNode *node) {
         case NODE_ASSIGNMENT: {
             Value value = eval_node(interp, node->data.assignment.value);
             set_variable(interp, node->data.assignment.name, value);
-            return value;
+            return value_copy(value);
         }
         
         case NODE_CALL:
@@ -424,8 +442,8 @@ static Value eval_node(Interpreter *interp, ASTNode *node) {
         case NODE_IDENTIFIER: {
             Variable *var = find_variable(interp, node->data.identifier.name);
             if (!var) {
-                fprintf(stderr, "Error: Variable '%s' not defined\n", 
-                       node->data.identifier.name);
+                fprintf(stderr, "Runtime Error: Line %d:%d: Variable '%s' not defined\n", 
+                       node->line, node->column, node->data.identifier.name);
                 return value_create_null();
             }
             // Return a copy of the variable value

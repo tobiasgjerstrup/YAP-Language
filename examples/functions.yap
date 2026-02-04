@@ -22,3 +22,7 @@ print(fact);
 var name = "World";
 var greeting = "Hello, " + name;
 print(greeting);
+var a = 0;
+print(a);
+a = "string";
+print(a);

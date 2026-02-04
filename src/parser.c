@@ -27,8 +27,15 @@ static void advance(Parser *parser) {
 
 static void set_error(Parser *parser, const char *msg) {
     parser->error = 1;
-    strncpy(parser->error_msg, msg, 255);
-    parser->error_msg[255] = '\0';
+    snprintf(parser->error_msg, 256, "Line %d:%d: %s", 
+             parser->current_token.line, parser->current_token.column, msg);
+}
+
+static void set_location(ASTNode *node, Token token) {
+    if (node) {
+        node->line = token.line;
+        node->column = token.column;
+    }
 }
 
 static int match(Parser *parser, TokenType type) {
@@ -52,31 +59,43 @@ static ASTNode* parse_expression(Parser *parser);
 
 static ASTNode* parse_primary(Parser *parser) {
     if (match(parser, TOKEN_INT)) {
+        Token tok = parser->current_token;
         int value = atoi(parser->current_token.value);
         advance(parser);
-        return ast_create_int_literal(value);
+        ASTNode *node = ast_create_int_literal(value);
+        set_location(node, tok);
+        return node;
     }
     
     if (match(parser, TOKEN_STRING)) {
+        Token tok = parser->current_token;
         char *value = malloc(strlen(parser->current_token.value) + 1);
         strcpy(value, parser->current_token.value);
         advance(parser);
         ASTNode *node = ast_create_string_literal(value);
+        set_location(node, tok);
         free(value);
         return node;
     }
     
     if (match(parser, TOKEN_TRUE)) {
+        Token tok = parser->current_token;
         advance(parser);
-        return ast_create_bool_literal(1);
+        ASTNode *node = ast_create_bool_literal(1);
+        set_location(node, tok);
+        return node;
     }
     
     if (match(parser, TOKEN_FALSE)) {
+        Token tok = parser->current_token;
         advance(parser);
-        return ast_create_bool_literal(0);
+        ASTNode *node = ast_create_bool_literal(0);
+        set_location(node, tok);
+        return node;
     }
     
     if (match(parser, TOKEN_IDENTIFIER)) {
+        Token tok = parser->current_token;
         char *name = malloc(strlen(parser->current_token.value) + 1);
         strcpy(name, parser->current_token.value);
         advance(parser);
@@ -100,11 +119,13 @@ static ASTNode* parse_primary(Parser *parser) {
             
             consume(parser, TOKEN_RPAREN, "Expected ')'");
             ASTNode *node = ast_create_call(name, args, arg_count);
+            set_location(node, tok);
             free(name);
             return node;
         }
         
         ASTNode *node = ast_create_identifier(name);
+        set_location(node, tok);
         free(name);
         return node;
     }
@@ -117,15 +138,21 @@ static ASTNode* parse_primary(Parser *parser) {
     }
     
     if (match(parser, TOKEN_NOT)) {
+        Token tok = parser->current_token;
         advance(parser);
         ASTNode *operand = parse_primary(parser);
-        return ast_create_unary_op(operand, "!");
+        ASTNode *node = ast_create_unary_op(operand, "!");
+        set_location(node, tok);
+        return node;
     }
     
     if (match(parser, TOKEN_MINUS)) {
+        Token tok = parser->current_token;
         advance(parser);
         ASTNode *operand = parse_primary(parser);
-        return ast_create_unary_op(operand, "-");
+        ASTNode *node = ast_create_unary_op(operand, "-");
+        set_location(node, tok);
+        return node;
     }
     
     set_error(parser, "Unexpected token in expression");
@@ -136,6 +163,7 @@ static ASTNode* parse_term(Parser *parser) {
     ASTNode *node = parse_primary(parser);
     
     while (match(parser, TOKEN_MUL) || match(parser, TOKEN_DIV) || match(parser, TOKEN_MOD)) {
+        Token op_tok = parser->current_token;
         char op[2];
         if (match(parser, TOKEN_MUL)) {
             strcpy(op, "*");
@@ -147,6 +175,7 @@ static ASTNode* parse_term(Parser *parser) {
         advance(parser);
         ASTNode *right = parse_primary(parser);
         node = ast_create_binary_op(node, right, op);
+        set_location(node, op_tok);
     }
     
     return node;
@@ -156,6 +185,7 @@ static ASTNode* parse_additive(Parser *parser) {
     ASTNode *node = parse_term(parser);
     
     while (match(parser, TOKEN_PLUS) || match(parser, TOKEN_MINUS)) {
+        Token op_tok = parser->current_token;
         char op[2];
         if (match(parser, TOKEN_PLUS)) {
             strcpy(op, "+");
@@ -165,6 +195,7 @@ static ASTNode* parse_additive(Parser *parser) {
         advance(parser);
         ASTNode *right = parse_term(parser);
         node = ast_create_binary_op(node, right, op);
+        set_location(node, op_tok);
     }
     
     return node;
@@ -176,6 +207,7 @@ static ASTNode* parse_comparison(Parser *parser) {
     while (match(parser, TOKEN_LT) || match(parser, TOKEN_LTE) || 
            match(parser, TOKEN_GT) || match(parser, TOKEN_GTE) ||
            match(parser, TOKEN_EQ) || match(parser, TOKEN_NEQ)) {
+        Token op_tok = parser->current_token;
         char op[3];
         if (match(parser, TOKEN_LT)) {
             strcpy(op, "<");
@@ -193,6 +225,7 @@ static ASTNode* parse_comparison(Parser *parser) {
         advance(parser);
         ASTNode *right = parse_additive(parser);
         node = ast_create_binary_op(node, right, op);
+        set_location(node, op_tok);
     }
     
     return node;
@@ -202,9 +235,11 @@ static ASTNode* parse_logical_and(Parser *parser) {
     ASTNode *node = parse_comparison(parser);
     
     while (match(parser, TOKEN_AND)) {
+        Token op_tok = parser->current_token;
         advance(parser);
         ASTNode *right = parse_comparison(parser);
         node = ast_create_binary_op(node, right, "&&");
+        set_location(node, op_tok);
     }
     
     return node;
@@ -214,9 +249,11 @@ static ASTNode* parse_logical_or(Parser *parser) {
     ASTNode *node = parse_logical_and(parser);
     
     while (match(parser, TOKEN_OR)) {
+        Token op_tok = parser->current_token;
         advance(parser);
         ASTNode *right = parse_logical_and(parser);
         node = ast_create_binary_op(node, right, "||");
+        set_location(node, op_tok);
     }
     
     return node;
@@ -227,6 +264,7 @@ static ASTNode* parse_expression(Parser *parser) {
 }
 
 static ASTNode* parse_var_decl(Parser *parser) {
+    Token start_tok = parser->current_token;
     consume(parser, TOKEN_VAR, "Expected 'var'");
     
     if (!match(parser, TOKEN_IDENTIFIER)) {
@@ -247,6 +285,7 @@ static ASTNode* parse_var_decl(Parser *parser) {
     consume(parser, TOKEN_SEMICOLON, "Expected ';'");
     
     ASTNode *node = ast_create_var_decl(name, value);
+    set_location(node, start_tok);
     free(name);
     return node;
 }
@@ -267,6 +306,7 @@ static ASTNode* parse_block(Parser *parser) {
 }
 
 static ASTNode* parse_if_stmt(Parser *parser) {
+    Token start_tok = parser->current_token;
     consume(parser, TOKEN_IF, "Expected 'if'");
     consume(parser, TOKEN_LPAREN, "Expected '('");
     ASTNode *condition = parse_expression(parser);
@@ -289,10 +329,13 @@ static ASTNode* parse_if_stmt(Parser *parser) {
         }
     }
     
-    return ast_create_if_stmt(condition, then_branch, else_branch);
+    ASTNode *node = ast_create_if_stmt(condition, then_branch, else_branch);
+    set_location(node, start_tok);
+    return node;
 }
 
 static ASTNode* parse_while_stmt(Parser *parser) {
+    Token start_tok = parser->current_token;
     consume(parser, TOKEN_WHILE, "Expected 'while'");
     consume(parser, TOKEN_LPAREN, "Expected '('");
     ASTNode *condition = parse_expression(parser);
@@ -305,10 +348,13 @@ static ASTNode* parse_while_stmt(Parser *parser) {
         body = parse_statement(parser);
     }
     
-    return ast_create_while_stmt(condition, body);
+    ASTNode *node = ast_create_while_stmt(condition, body);
+    set_location(node, start_tok);
+    return node;
 }
 
 static ASTNode* parse_return_stmt(Parser *parser) {
+    Token start_tok = parser->current_token;
     consume(parser, TOKEN_RETURN, "Expected 'return'");
     
     ASTNode *value = NULL;
@@ -317,20 +363,26 @@ static ASTNode* parse_return_stmt(Parser *parser) {
     }
     
     consume(parser, TOKEN_SEMICOLON, "Expected ';'");
-    return ast_create_return_stmt(value);
+    ASTNode *node = ast_create_return_stmt(value);
+    set_location(node, start_tok);
+    return node;
 }
 
 static ASTNode* parse_print_stmt(Parser *parser) {
+    Token start_tok = parser->current_token;
     consume(parser, TOKEN_PRINT, "Expected 'print'");
     consume(parser, TOKEN_LPAREN, "Expected '('");
     ASTNode *value = parse_expression(parser);
     consume(parser, TOKEN_RPAREN, "Expected ')'");
     consume(parser, TOKEN_SEMICOLON, "Expected ';'");
     
-    return ast_create_print_stmt(value);
+    ASTNode *node = ast_create_print_stmt(value);
+    set_location(node, start_tok);
+    return node;
 }
 
 static ASTNode* parse_func_decl(Parser *parser) {
+    Token start_tok = parser->current_token;
     consume(parser, TOKEN_FN, "Expected 'fn'");
     
     if (!match(parser, TOKEN_IDENTIFIER)) {
@@ -373,6 +425,7 @@ static ASTNode* parse_func_decl(Parser *parser) {
     ASTNode *body = parse_block(parser);
     
     ASTNode *node = ast_create_func_decl(name, params, param_count, body);
+    set_location(node, start_tok);
     free(name);
     return node;
 }
@@ -382,6 +435,10 @@ static ASTNode* parse_assignment_or_expression(Parser *parser) {
     
     if (match(parser, TOKEN_ASSIGN)) {
         if (expr->type == NODE_IDENTIFIER) {
+            Token tok = {0};
+            tok.line = expr->line;
+            tok.column = expr->column;
+            
             char *name = malloc(strlen(expr->data.identifier.name) + 1);
             strcpy(name, expr->data.identifier.name);
             
@@ -391,6 +448,7 @@ static ASTNode* parse_assignment_or_expression(Parser *parser) {
             
             ast_free(expr);
             ASTNode *node = ast_create_assignment(name, value);
+            set_location(node, tok);
             free(name);
             return node;
         }

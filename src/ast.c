@@ -5,6 +5,8 @@
 static ASTNode* ast_create_node(NodeType type) {
     ASTNode *node = malloc(sizeof(ASTNode));
     node->type = type;
+    node->line = 0;
+    node->column = 0;
     node->statements = NULL;
     node->statement_count = 0;
     return node;

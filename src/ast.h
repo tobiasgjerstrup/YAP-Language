@@ -98,6 +98,8 @@ typedef struct {
 
 struct ASTNode {
     NodeType type;
+    int line;
+    int column;
     union {
         VarDecl var_decl;
         FuncDecl func_decl;
