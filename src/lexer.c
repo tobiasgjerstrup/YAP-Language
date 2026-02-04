@@ -175,6 +175,8 @@ Token lexer_next_token(Lexer *lexer) {
     if (ch == ')') { token.type = TOKEN_RPAREN; token.value = NULL; return token; }
     if (ch == '{') { token.type = TOKEN_LBRACE; token.value = NULL; return token; }
     if (ch == '}') { token.type = TOKEN_RBRACE; token.value = NULL; return token; }
+    if (ch == '[') { token.type = TOKEN_LBRACKET; token.value = NULL; return token; }
+    if (ch == ']') { token.type = TOKEN_RBRACKET; token.value = NULL; return token; }
     if (ch == ';') { token.type = TOKEN_SEMICOLON; token.value = NULL; return token; }
     if (ch == ',') { token.type = TOKEN_COMMA; token.value = NULL; return token; }
     

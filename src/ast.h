@@ -19,7 +19,9 @@ typedef enum {
     NODE_STRING_LITERAL,
     NODE_BOOL_LITERAL,
     NODE_IDENTIFIER,
-    NODE_BLOCK
+    NODE_BLOCK,
+    NODE_ARRAY_LITERAL,
+    NODE_ARRAY_INDEX
 } NodeType;
 
 typedef struct {
@@ -96,6 +98,16 @@ typedef struct {
     char *name;
 } Identifier;
 
+typedef struct {
+    ASTNode **elements;
+    int element_count;
+} ArrayLiteral;
+
+typedef struct {
+    ASTNode *array;
+    ASTNode *index;
+} ArrayIndex;
+
 struct ASTNode {
     NodeType type;
     int line;
@@ -116,6 +128,8 @@ struct ASTNode {
         StringLiteral string_literal;
         BoolLiteral bool_literal;
         Identifier identifier;
+        ArrayLiteral array_literal;
+        ArrayIndex array_index;
     } data;
     ASTNode **statements; // for PROGRAM and BLOCK
     int statement_count;
@@ -137,6 +151,8 @@ ASTNode* ast_create_int_literal(int value);
 ASTNode* ast_create_string_literal(const char *value);
 ASTNode* ast_create_bool_literal(int value);
 ASTNode* ast_create_identifier(const char *name);
+ASTNode* ast_create_array_literal(ASTNode **elements, int count);
+ASTNode* ast_create_array_index(ASTNode *array, ASTNode *index);
 void ast_free(ASTNode *node);
 
 #endif // AST_H

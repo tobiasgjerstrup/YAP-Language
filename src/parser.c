@@ -155,12 +155,49 @@ static ASTNode* parse_primary(Parser *parser) {
         return node;
     }
     
+    if (match(parser, TOKEN_LBRACKET)) {
+        Token tok = parser->current_token;
+        advance(parser);
+        
+        ASTNode **elements = NULL;
+        int element_count = 0;
+        
+        if (!check(parser, TOKEN_RBRACKET)) {
+            elements = malloc(sizeof(ASTNode*) * 256);  // Max 256 elements
+            do {
+                if (match(parser, TOKEN_COMMA)) advance(parser);
+                elements[element_count++] = parse_expression(parser);
+            } while (match(parser, TOKEN_COMMA));
+        }
+        
+        consume(parser, TOKEN_RBRACKET, "Expected ']'");
+        ASTNode *node = ast_create_array_literal(elements, element_count);
+        set_location(node, tok);
+        return node;
+    }
+    
     set_error(parser, "Unexpected token in expression");
     return NULL;
 }
 
-static ASTNode* parse_term(Parser *parser) {
+static ASTNode* parse_postfix(Parser *parser) {
     ASTNode *node = parse_primary(parser);
+    
+    // Handle array indexing: arr[idx]
+    while (match(parser, TOKEN_LBRACKET)) {
+        Token tok = parser->current_token;
+        advance(parser);
+        ASTNode *index = parse_expression(parser);
+        consume(parser, TOKEN_RBRACKET, "Expected ']'");
+        node = ast_create_array_index(node, index);
+        set_location(node, tok);
+    }
+    
+    return node;
+}
+
+static ASTNode* parse_term(Parser *parser) {
+    ASTNode *node = parse_postfix(parser);
     
     while (match(parser, TOKEN_MUL) || match(parser, TOKEN_DIV) || match(parser, TOKEN_MOD)) {
         Token op_tok = parser->current_token;
@@ -173,7 +210,7 @@ static ASTNode* parse_term(Parser *parser) {
             strcpy(op, "%");
         }
         advance(parser);
-        ASTNode *right = parse_primary(parser);
+        ASTNode *right = parse_postfix(parser);
         node = ast_create_binary_op(node, right, op);
         set_location(node, op_tok);
     }

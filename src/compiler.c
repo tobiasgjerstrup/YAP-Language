@@ -9,7 +9,7 @@
 #define MAX_FUNCTIONS 256
 #define MAX_STRINGS 256
 
-typedef enum { TYPE_INT = 0, TYPE_STRING = 1, TYPE_BOOL = 2 } VarType;
+typedef enum { TYPE_INT = 0, TYPE_STRING = 1, TYPE_BOOL = 2, TYPE_ARRAY = 3 } VarType;
 
 typedef struct {
     char *name;
@@ -234,6 +234,8 @@ static VarType expr_is_string(Codegen *cg, ASTNode *node) {
     if (!node) return TYPE_INT;
     if (node->type == NODE_STRING_LITERAL) return TYPE_STRING;
     if (node->type == NODE_BOOL_LITERAL) return TYPE_BOOL;
+    if (node->type == NODE_ARRAY_LITERAL) return TYPE_ARRAY;
+    if (node->type == NODE_ARRAY_INDEX) return TYPE_INT;  // Array indexing returns element (usually int)
     if (node->type == NODE_IDENTIFIER) return get_local_type(cg, node->data.identifier.name);
     if (node->type == NODE_BINARY_OP) {
         const char *op = node->data.binary_op.op;
@@ -392,6 +394,41 @@ static void gen_expr(Codegen *cg, ASTNode *node) {
         case NODE_BOOL_LITERAL:
             emit(cg, "    mov rax, %d\n", node->data.bool_literal.value ? 1 : 0);
             return;
+        case NODE_ARRAY_LITERAL: {
+            // Array layout: [length | elem0 | elem1 | ...]
+            int elem_count = node->data.array_literal.element_count;
+            int total_size = (elem_count + 1) * 8;  // length + elements
+            
+            // malloc(total_size)
+            emit(cg, "    mov rdi, %d\n", total_size);
+            emit(cg, "    call malloc@PLT\n");
+            emit(cg, "    push rax\n");  // Save array pointer
+            
+            // Store length at offset 0
+            emit(cg, "    mov rcx, [rsp]\n");  // Get array pointer
+            emit(cg, "    mov QWORD PTR [rcx], %d\n", elem_count);  // Store length
+            
+            // Store elements starting at offset 8
+            for (int i = 0; i < elem_count; i++) {
+                gen_expr(cg, node->data.array_literal.elements[i]);
+                emit(cg, "    mov rcx, [rsp]\n");  // Get array pointer
+                emit(cg, "    mov QWORD PTR [rcx + %d], rax\n", (i + 1) * 8);  // Store element
+            }
+            
+            emit(cg, "    pop rax\n");  // Return array pointer
+            return;
+        }
+        case NODE_ARRAY_INDEX: {
+            // array[index] -> load from array
+            gen_expr(cg, node->data.array_index.array);
+            emit(cg, "    push rax\n");  // Save array pointer
+            gen_expr(cg, node->data.array_index.index);
+            emit(cg, "    mov rcx, rax\n");  // rcx = index
+            emit(cg, "    pop rax\n");   // Get array pointer
+            // Load: array[index] = *(array + (index + 1) * 8)
+            emit(cg, "    mov rax, QWORD PTR [rax + rcx*8 + 8]\n");
+            return;
+        }
         case NODE_STRING_LITERAL: {
             int label_id = add_string(cg, node->data.string_literal.value);
             if (label_id < 0) {
@@ -568,6 +605,8 @@ static void gen_stmt(Codegen *cg, ASTNode *node) {
         case NODE_INT_LITERAL:
         case NODE_STRING_LITERAL:
         case NODE_BOOL_LITERAL:
+        case NODE_ARRAY_LITERAL:
+        case NODE_ARRAY_INDEX:
         case NODE_IDENTIFIER:
         case NODE_BINARY_OP:
         case NODE_UNARY_OP:

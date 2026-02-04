@@ -131,6 +131,20 @@ ASTNode* ast_create_identifier(const char *name) {
     return node;
 }
 
+ASTNode* ast_create_array_literal(ASTNode **elements, int count) {
+    ASTNode *node = ast_create_node(NODE_ARRAY_LITERAL);
+    node->data.array_literal.elements = elements;
+    node->data.array_literal.element_count = count;
+    return node;
+}
+
+ASTNode* ast_create_array_index(ASTNode *array, ASTNode *index) {
+    ASTNode *node = ast_create_node(NODE_ARRAY_INDEX);
+    node->data.array_index.array = array;
+    node->data.array_index.index = index;
+    return node;
+}
+
 void ast_free(ASTNode *node) {
     if (!node) return;
     
@@ -198,6 +212,18 @@ void ast_free(ASTNode *node) {
             break;
         case NODE_IDENTIFIER:
             free(node->data.identifier.name);
+            break;
+        case NODE_ARRAY_LITERAL:
+            if (node->data.array_literal.elements) {
+                for (int i = 0; i < node->data.array_literal.element_count; i++) {
+                    ast_free(node->data.array_literal.elements[i]);
+                }
+                free(node->data.array_literal.elements);
+            }
+            break;
+        case NODE_ARRAY_INDEX:
+            ast_free(node->data.array_index.array);
+            ast_free(node->data.array_index.index);
             break;
         default:
             break;
