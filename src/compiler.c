@@ -260,6 +260,11 @@ static VarType expr_is_string(Codegen *cg, ASTNode *node) {
             return TYPE_BOOL;
         }
     }
+    if (node->type == NODE_CALL) {
+        if (strcmp(node->data.call.name, "read") == 0) {
+            return TYPE_STRING;
+        }
+    }
     return TYPE_INT;
 }
 
@@ -498,6 +503,53 @@ static void gen_expr(Codegen *cg, ASTNode *node) {
                 return;
             }
             
+            // File I/O built-ins
+            if (strcmp(node->data.call.name, "read") == 0) {
+                if (node->data.call.arg_count != 1) {
+                    set_error(cg, node, "read() expects 1 argument: filename");
+                    return;
+                }
+                // read(filename) - returns file contents as string
+                gen_expr(cg, node->data.call.args[0]);
+                emit(cg, "    mov rdi, rax\n");  // rdi = filename
+                emit(cg, "    xor eax, eax\n");
+                emit(cg, "    call yap_file_read\n");
+                // rax now contains pointer to string (or NULL on error)
+                return;
+            }
+            
+            if (strcmp(node->data.call.name, "write") == 0) {
+                if (node->data.call.arg_count != 2) {
+                    set_error(cg, node, "write() expects 2 arguments: filename, content");
+                    return;
+                }
+                // write(filename, content) - returns 0 on success
+                gen_expr(cg, node->data.call.args[0]);
+                emit(cg, "    push rax\n");  // Save filename
+                gen_expr(cg, node->data.call.args[1]);
+                emit(cg, "    mov rsi, rax\n");  // rsi = content
+                emit(cg, "    pop rdi\n");       // rdi = filename
+                emit(cg, "    xor eax, eax\n");
+                emit(cg, "    call yap_file_write\n");
+                return;
+            }
+            
+            if (strcmp(node->data.call.name, "append") == 0) {
+                if (node->data.call.arg_count != 2) {
+                    set_error(cg, node, "append() expects 2 arguments: filename, content");
+                    return;
+                }
+                // append(filename, content) - returns 0 on success
+                gen_expr(cg, node->data.call.args[0]);
+                emit(cg, "    push rax\n");  // Save filename
+                gen_expr(cg, node->data.call.args[1]);
+                emit(cg, "    mov rsi, rax\n");  // rsi = content
+                emit(cg, "    pop rdi\n");       // rdi = filename
+                emit(cg, "    xor eax, eax\n");
+                emit(cg, "    call yap_file_append\n");
+                return;
+            }
+            
             // User-defined function
             FunctionDef *func = find_function(cg, node->data.call.name);
             if (!func) {
@@ -657,6 +709,15 @@ static void emit_string_section(Codegen *cg) {
     emit(cg, ".section .rodata\n");
     emit(cg, ".LC0:\n");
     emit(cg, "    .string \"%%ld\\n\"\n");
+    
+    // File mode strings for I/O
+    emit(cg, ".filemode_r:\n");
+    emit(cg, "    .string \"r\"\n");
+    emit(cg, ".filemode_w:\n");
+    emit(cg, "    .string \"w\"\n");
+    emit(cg, ".filemode_a:\n");
+    emit(cg, "    .string \"a\"\n");
+    
     for (int i = 0; i < cg->string_count; i++) {
         emit(cg, ".LC%d:\n", cg->strings[i].label_id);
         emit(cg, "    .string \"");
@@ -809,6 +870,176 @@ static void emit_runtime_helpers(Codegen *cg) {
     
     emit(cg, ".pop_empty:\n");
     emit(cg, "    xor eax, eax\n");           // return 0 if array empty
+    emit(cg, "    pop rbp\n");
+    emit(cg, "    ret\n");
+    
+    // yap_file_read(rdi=filename) -> rax=file contents as string (or null on error)
+    // Simple approach: read entire file into a large buffer
+    emit(cg, "\n.globl yap_file_read\n");
+    emit(cg, ".type yap_file_read, @function\n");
+    emit(cg, "yap_file_read:\n");
+    emit(cg, "    push rbp\n");
+    emit(cg, "    mov rbp, rsp\n");
+    emit(cg, "    push rbx\n");
+    emit(cg, "    push r12\n");
+    emit(cg, "    sub rsp, 8\n");
+    
+    // rdi = filename
+    emit(cg, "    mov r12, rdi\n");           // r12 = filename
+    
+    // Allocate a 64KB buffer for reading
+    emit(cg, "    mov rdi, 65536\n");
+    emit(cg, "    call malloc@PLT\n");
+    emit(cg, "    mov rbx, rax\n");           // rbx = buffer
+    emit(cg, "    test rbx, rbx\n");
+    emit(cg, "    jz .file_read_error\n");
+    
+    // Open file
+    emit(cg, "    mov rdi, r12\n");
+    emit(cg, "    lea rsi, [rip + .filemode_r]\n");
+    emit(cg, "    call fopen@PLT\n");
+    emit(cg, "    mov r12, rax\n");           // r12 = FILE*
+    emit(cg, "    test r12, r12\n");
+    emit(cg, "    jz .file_read_error_free\n");
+    
+    // Read all data using fgets in a loop (simplified: just one read for now)
+    emit(cg, "    mov rdi, rbx\n");           // ptr
+    emit(cg, "    mov rsi, 65536\n");         // size
+    emit(cg, "    mov rdx, r12\n");           // FILE*
+    emit(cg, "    call fgets@PLT\n");
+    
+    // Close file
+    emit(cg, "    mov rdi, r12\n");
+    emit(cg, "    call fclose@PLT\n");
+    
+    emit(cg, "    mov rax, rbx\n");           // return buffer
+    emit(cg, "    add rsp, 8\n");
+    emit(cg, "    pop r12\n");
+    emit(cg, "    pop rbx\n");
+    emit(cg, "    pop rbp\n");
+    emit(cg, "    ret\n");
+    
+    emit(cg, ".file_read_error_free:\n");
+    emit(cg, "    mov rdi, rbx\n");
+    emit(cg, "    call free@PLT\n");
+    
+    emit(cg, ".file_read_error:\n");
+    emit(cg, "    xor eax, eax\n");           // return NULL
+    emit(cg, "    add rsp, 8\n");
+    emit(cg, "    pop r12\n");
+    emit(cg, "    pop rbx\n");
+    emit(cg, "    pop rbp\n");
+    emit(cg, "    ret\n");
+    
+    // yap_file_write(rdi=filename, rsi=content) -> rax=0 on success, -1 on error
+    emit(cg, "\n.globl yap_file_write\n");
+    emit(cg, ".type yap_file_write, @function\n");
+    emit(cg, "yap_file_write:\n");
+    emit(cg, "    push rbp\n");
+    emit(cg, "    mov rbp, rsp\n");
+    emit(cg, "    push rbx\n");
+    emit(cg, "    push r12\n");
+    emit(cg, "    push r13\n");
+    emit(cg, "    sub rsp, 8\n");
+    
+    // rdi = filename, rsi = content
+    emit(cg, "    mov r12, rdi\n");           // r12 = filename
+    emit(cg, "    mov r13, rsi\n");           // r13 = content
+    
+    // Open file in write mode
+    emit(cg, "    mov rdi, r12\n");
+    emit(cg, "    lea rsi, [rip + .filemode_w]\n");
+    emit(cg, "    call fopen@PLT\n");
+    emit(cg, "    mov rbx, rax\n");           // rbx = FILE*
+    emit(cg, "    test rbx, rbx\n");
+    emit(cg, "    jz .file_write_error\n");
+    
+    // Get string length
+    emit(cg, "    mov rdi, r13\n");
+    emit(cg, "    call strlen@PLT\n");
+    emit(cg, "    mov r12, rax\n");           // r12 = length
+    
+    // Write to file: fwrite(ptr, 1, len, FILE*)
+    emit(cg, "    mov rdi, r13\n");           // ptr = content
+    emit(cg, "    mov rsi, 1\n");             // size = 1
+    emit(cg, "    mov rdx, r12\n");           // nmemb = length
+    emit(cg, "    mov rcx, rbx\n");           // FILE*
+    emit(cg, "    call fwrite@PLT\n");
+    
+    // Close file
+    emit(cg, "    mov rdi, rbx\n");
+    emit(cg, "    call fclose@PLT\n");
+    
+    emit(cg, "    xor eax, eax\n");           // return 0
+    emit(cg, "    add rsp, 8\n");
+    emit(cg, "    pop r13\n");
+    emit(cg, "    pop r12\n");
+    emit(cg, "    pop rbx\n");
+    emit(cg, "    pop rbp\n");
+    emit(cg, "    ret\n");
+    
+    emit(cg, ".file_write_error:\n");
+    emit(cg, "    mov eax, -1\n");            // return -1
+    emit(cg, "    add rsp, 8\n");
+    emit(cg, "    pop r13\n");
+    emit(cg, "    pop r12\n");
+    emit(cg, "    pop rbx\n");
+    emit(cg, "    pop rbp\n");
+    emit(cg, "    ret\n");
+    
+    // yap_file_append(rdi=filename, rsi=content) -> rax=0 on success, -1 on error
+    emit(cg, "\n.globl yap_file_append\n");
+    emit(cg, ".type yap_file_append, @function\n");
+    emit(cg, "yap_file_append:\n");
+    emit(cg, "    push rbp\n");
+    emit(cg, "    mov rbp, rsp\n");
+    emit(cg, "    push rbx\n");
+    emit(cg, "    push r12\n");
+    emit(cg, "    push r13\n");
+    emit(cg, "    sub rsp, 8\n");
+    
+    // rdi = filename, rsi = content
+    emit(cg, "    mov r12, rdi\n");           // r12 = filename
+    emit(cg, "    mov r13, rsi\n");           // r13 = content
+    
+    // Open file in append mode
+    emit(cg, "    mov rdi, r12\n");
+    emit(cg, "    lea rsi, [rip + .filemode_a]\n");
+    emit(cg, "    call fopen@PLT\n");
+    emit(cg, "    mov rbx, rax\n");           // rbx = FILE*
+    emit(cg, "    test rbx, rbx\n");
+    emit(cg, "    jz .file_append_error\n");
+    
+    // Get string length
+    emit(cg, "    mov rdi, r13\n");
+    emit(cg, "    call strlen@PLT\n");
+    emit(cg, "    mov r12, rax\n");           // r12 = length
+    
+    // Write to file: fwrite(ptr, 1, len, FILE*)
+    emit(cg, "    mov rdi, r13\n");           // ptr = content
+    emit(cg, "    mov rsi, 1\n");             // size = 1
+    emit(cg, "    mov rdx, r12\n");           // nmemb = length
+    emit(cg, "    mov rcx, rbx\n");           // FILE*
+    emit(cg, "    call fwrite@PLT\n");
+    
+    // Close file
+    emit(cg, "    mov rdi, rbx\n");
+    emit(cg, "    call fclose@PLT\n");
+    
+    emit(cg, "    xor eax, eax\n");           // return 0
+    emit(cg, "    add rsp, 8\n");
+    emit(cg, "    pop r13\n");
+    emit(cg, "    pop r12\n");
+    emit(cg, "    pop rbx\n");
+    emit(cg, "    pop rbp\n");
+    emit(cg, "    ret\n");
+    
+    emit(cg, ".file_append_error:\n");
+    emit(cg, "    mov eax, -1\n");            // return -1
+    emit(cg, "    add rsp, 8\n");
+    emit(cg, "    pop r13\n");
+    emit(cg, "    pop r12\n");
+    emit(cg, "    pop rbx\n");
     emit(cg, "    pop rbp\n");
     emit(cg, "    ret\n");
 }
