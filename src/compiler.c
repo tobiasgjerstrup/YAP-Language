@@ -465,6 +465,40 @@ static void gen_expr(Codegen *cg, ASTNode *node) {
             set_error(cg, node, "Unsupported unary operator '%s'", node->data.unary_op.op);
             return;
         case NODE_CALL: {
+            // Check for built-in array functions
+            if (strcmp(node->data.call.name, "push") == 0) {
+                if (node->data.call.arg_count != 2) {
+                    set_error(cg, node, "push() expects 2 arguments: array and value");
+                    return;
+                }
+                // push(array, value)
+                // rdi = array ptr
+                // rsi = value
+                // Returns new array ptr (or same if capacity available)
+                gen_expr(cg, node->data.call.args[0]);
+                emit(cg, "    push rax\n");  // Save array ptr
+                gen_expr(cg, node->data.call.args[1]);
+                emit(cg, "    mov rsi, rax\n");  // rsi = value
+                emit(cg, "    pop rdi\n");       // rdi = array ptr
+                emit(cg, "    xor eax, eax\n");
+                emit(cg, "    call yap_array_push\n");
+                return;
+            }
+            
+            if (strcmp(node->data.call.name, "pop") == 0) {
+                if (node->data.call.arg_count != 1) {
+                    set_error(cg, node, "pop() expects 1 argument: array");
+                    return;
+                }
+                // pop(array) - returns popped value
+                gen_expr(cg, node->data.call.args[0]);
+                emit(cg, "    mov rdi, rax\n");  // rdi = array ptr
+                emit(cg, "    xor eax, eax\n");
+                emit(cg, "    call yap_array_pop\n");
+                return;
+            }
+            
+            // User-defined function
             FunctionDef *func = find_function(cg, node->data.call.name);
             if (!func) {
                 set_error(cg, node, "Undefined function '%s'", node->data.call.name);
@@ -647,6 +681,7 @@ static void emit_runtime_helpers(Codegen *cg) {
     emit(cg, "    push rbx\n");
     emit(cg, "    push r12\n");
     emit(cg, "    push r13\n");
+    emit(cg, "    sub rsp, 8\n");             // Align stack
     
     // rdi = str1, rsi = str2 (SysV ABI)
     emit(cg, "    mov r12, rdi\n");
@@ -682,9 +717,98 @@ static void emit_runtime_helpers(Codegen *cg) {
     
     emit(cg, "    mov rax, rbx\n");
     
+    emit(cg, "    add rsp, 8\n");
     emit(cg, "    pop r13\n");
     emit(cg, "    pop r12\n");
     emit(cg, "    pop rbx\n");
+    emit(cg, "    pop rbp\n");
+    emit(cg, "    ret\n");
+    
+    // yap_array_push(rdi=array_ptr, rsi=value) -> rax=new_array_ptr
+    emit(cg, "\n.globl yap_array_push\n");
+    emit(cg, ".type yap_array_push, @function\n");
+    emit(cg, "yap_array_push:\n");
+    emit(cg, "    push rbp\n");
+    emit(cg, "    mov rbp, rsp\n");
+    emit(cg, "    push rbx\n");
+    emit(cg, "    push r12\n");
+    emit(cg, "    push r13\n");
+    emit(cg, "    push r14\n");
+    emit(cg, "    push r15\n");
+    emit(cg, "    sub rsp, 8\n");             // Align stack to 16 bytes before call
+    
+    // rdi = array_ptr, rsi = value
+    emit(cg, "    mov r12, rdi\n");           // r12 = old array_ptr
+    emit(cg, "    mov r13, rsi\n");           // r13 = value to push
+    
+    // Get old length from array[0]
+    emit(cg, "    mov r14, [r12]\n");         // r14 = old_length
+    
+    // Calculate new array size: (length + 1 + 1) * 8 bytes
+    // We need: [length_field | elem0 | elem1 | ... | elemN] = (old_length + 2) fields * 8 bytes
+    emit(cg, "    mov r15, r14\n");           // r15 = old_length
+    emit(cg, "    add r15, 2\n");             // r15 = old_length + 2
+    emit(cg, "    imul r15, 8\n");            // r15 = byte size
+    
+    // Allocate new array
+    emit(cg, "    mov rdi, r15\n");           // arg1: size
+    emit(cg, "    call malloc@PLT\n");        // rax = new array ptr
+    emit(cg, "    mov rbx, rax\n");           // rbx = new array ptr
+    
+    // Copy old array to new array using memcpy
+    // memcpy(dest=new, src=old, count=(old_length+1)*8)
+    emit(cg, "    mov rdi, rbx\n");           // arg1: dest
+    emit(cg, "    mov rsi, r12\n");           // arg2: src (old array)
+    emit(cg, "    mov rdx, r14\n");           // rdx = old_length
+    emit(cg, "    add rdx, 1\n");             // rdx = old_length + 1 (length field + old elements)
+    emit(cg, "    imul rdx, 8\n");            // rdx = bytes to copy
+    emit(cg, "    call memcpy@PLT\n");        // copies data
+    
+    // Update length in new array
+    emit(cg, "    mov rax, r14\n");
+    emit(cg, "    add rax, 1\n");             // rax = new_length
+    emit(cg, "    mov [rbx], rax\n");         // array[0] = new_length
+    
+    // Store the new value at array[new_length]
+    // Index in array = (old_length + 1) because [0] is length, [1] is first element, etc.
+    emit(cg, "    mov rax, r14\n");
+    emit(cg, "    add rax, 1\n");             // rax = index into array
+    emit(cg, "    mov [rbx + rax*8], r13\n"); // array[index] = value
+    
+    emit(cg, "    mov rax, rbx\n");           // return new array ptr
+    
+    emit(cg, "    add rsp, 8\n");
+    emit(cg, "    pop r15\n");
+    emit(cg, "    pop r14\n");
+    emit(cg, "    pop r13\n");
+    emit(cg, "    pop r12\n");
+    emit(cg, "    pop rbx\n");
+    emit(cg, "    pop rbp\n");
+    emit(cg, "    ret\n");
+    
+    // yap_array_pop(rdi=array_ptr) -> rax=popped_value
+    emit(cg, "\n.globl yap_array_pop\n");
+    emit(cg, ".type yap_array_pop, @function\n");
+    emit(cg, "yap_array_pop:\n");
+    emit(cg, "    push rbp\n");
+    emit(cg, "    mov rbp, rsp\n");
+    
+    // rdi = array_ptr
+    emit(cg, "    mov rax, [rdi]\n");         // rax = length
+    emit(cg, "    cmp rax, 0\n");
+    emit(cg, "    jle .pop_empty\n");
+    
+    // Decrement length
+    emit(cg, "    sub rax, 1\n");              // rax = new_length
+    emit(cg, "    mov [rdi], rax\n");         // update length
+    
+    // Return popped value: array[new_length]
+    emit(cg, "    mov rax, [rdi + rax*8 + 8]\n");  // return element at index new_length
+    emit(cg, "    pop rbp\n");
+    emit(cg, "    ret\n");
+    
+    emit(cg, ".pop_empty:\n");
+    emit(cg, "    xor eax, eax\n");           // return 0 if array empty
     emit(cg, "    pop rbp\n");
     emit(cg, "    ret\n");
 }
