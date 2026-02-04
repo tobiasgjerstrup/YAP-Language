@@ -36,6 +36,8 @@ dist/
 # Executables
 *.exe
 *.out
+out
+out.s
 *.app
 *.i*86
 *.x86_64

@@ -4,8 +4,8 @@ SRCDIR = src
 OBJDIR = build
 BINDIR = bin
 
-SOURCES = $(SRCDIR)/main.c $(SRCDIR)/lexer.c $(SRCDIR)/parser.c $(SRCDIR)/ast.c $(SRCDIR)/interpreter.c
-OBJECTS = $(OBJDIR)/main.o $(OBJDIR)/lexer.o $(OBJDIR)/parser.o $(OBJDIR)/ast.o $(OBJDIR)/interpreter.o
+SOURCES = $(SRCDIR)/main.c $(SRCDIR)/lexer.c $(SRCDIR)/parser.c $(SRCDIR)/ast.c $(SRCDIR)/interpreter.c $(SRCDIR)/compiler.c
+OBJECTS = $(OBJDIR)/main.o $(OBJDIR)/lexer.o $(OBJDIR)/parser.o $(OBJDIR)/ast.o $(OBJDIR)/interpreter.o $(OBJDIR)/compiler.o
 EXECUTABLE = $(BINDIR)/yap
 
 all: $(EXECUTABLE)

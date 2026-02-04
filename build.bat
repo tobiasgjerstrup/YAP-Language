@@ -21,9 +21,11 @@ if errorlevel 1 goto error
 if errorlevel 1 goto error
 %CC% %CFLAGS% -c %SRCDIR%\interpreter.c -o %OBJDIR%\interpreter.o
 if errorlevel 1 goto error
+%CC% %CFLAGS% -c %SRCDIR%\compiler.c -o %OBJDIR%\compiler.o
+if errorlevel 1 goto error
 
 echo Linking...
-%CC% %CFLAGS% %OBJDIR%\main.o %OBJDIR%\lexer.o %OBJDIR%\parser.o %OBJDIR%\ast.o %OBJDIR%\interpreter.o -o %BINDIR%\yap.exe
+%CC% %CFLAGS% %OBJDIR%\main.o %OBJDIR%\lexer.o %OBJDIR%\parser.o %OBJDIR%\ast.o %OBJDIR%\interpreter.o %OBJDIR%\compiler.o -o %BINDIR%\yap.exe
 if errorlevel 1 goto error
 
 echo Build complete: %BINDIR%\yap.exe
