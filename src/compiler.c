@@ -329,14 +329,22 @@ static void gen_expr(Codegen *cg, ASTNode *node) {
             }
             // SysV ABI: rdi, rsi, rdx, rcx, r8, r9
             static const char *arg_regs[] = {"rdi", "rsi", "rdx", "rcx", "r8", "r9"};
+            
+            // Evaluate all arguments first, pushing to stack to avoid clobbering
             for (int i = 0; i < node->data.call.arg_count; i++) {
                 gen_expr(cg, node->data.call.args[i]);
+                emit(cg, "    push rax\n");
+            }
+            
+            // Pop arguments into registers in reverse order
+            for (int i = node->data.call.arg_count - 1; i >= 0; i--) {
                 if (i < 6) {
-                    emit(cg, "    mov %s, rax\n", arg_regs[i]);
+                    emit(cg, "    pop %s\n", arg_regs[i]);
                 } else {
-                    emit(cg, "    push rax\n");
+                    emit(cg, "    pop rax\n");
                 }
             }
+            
             emit(cg, "    xor eax, eax\n");
             emit(cg, "    call %s\n", node->data.call.name);
             return;

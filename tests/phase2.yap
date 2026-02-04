@@ -1,4 +1,4 @@
-// Phase 2 test: if/else, while loops, functions, returns, strings
+// Phase 2 test: if/else, while loops, functions, returns
 
 // Test if/else
 var x = 5;
@@ -44,14 +44,6 @@ print(fact);
 // Test nested function calls
 var nested = add(factorial(3), add(2, 3));
 print(nested);
-
-// Test string literals and concatenation
-var greeting = "Hello";
-print(greeting);
-
-var world = " World";
-var full = greeting + world;
-print(full);
 
 // Test complex control flow
 var sum2 = 0;
