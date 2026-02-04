@@ -9,7 +9,7 @@
 #define MAX_FUNCTIONS 256
 #define MAX_STRINGS 256
 
-typedef enum { TYPE_INT = 0, TYPE_STRING = 1 } VarType;
+typedef enum { TYPE_INT = 0, TYPE_STRING = 1, TYPE_BOOL = 2 } VarType;
 
 typedef struct {
     char *name;
@@ -233,10 +233,19 @@ static void gen_stmt(Codegen *cg, ASTNode *node);
 static VarType expr_is_string(Codegen *cg, ASTNode *node) {
     if (!node) return TYPE_INT;
     if (node->type == NODE_STRING_LITERAL) return TYPE_STRING;
+    if (node->type == NODE_BOOL_LITERAL) return TYPE_BOOL;
     if (node->type == NODE_IDENTIFIER) return get_local_type(cg, node->data.identifier.name);
     if (node->type == NODE_BINARY_OP) {
+        const char *op = node->data.binary_op.op;
+        // Comparison and logical operators return booleans
+        if (strcmp(op, "<") == 0 || strcmp(op, "<=") == 0 ||
+            strcmp(op, ">") == 0 || strcmp(op, ">=") == 0 ||
+            strcmp(op, "==") == 0 || strcmp(op, "!=") == 0 ||
+            strcmp(op, "&&") == 0 || strcmp(op, "||") == 0) {
+            return TYPE_BOOL;
+        }
         // String concatenation: if operator is + and either operand is string, result is string
-        if (strcmp(node->data.binary_op.op, "+") == 0) {
+        if (strcmp(op, "+") == 0) {
             VarType left_type = expr_is_string(cg, node->data.binary_op.left);
             VarType right_type = expr_is_string(cg, node->data.binary_op.right);
             if (left_type == TYPE_STRING || right_type == TYPE_STRING) {
@@ -244,11 +253,61 @@ static VarType expr_is_string(Codegen *cg, ASTNode *node) {
             }
         }
     }
+    if (node->type == NODE_UNARY_OP) {
+        if (strcmp(node->data.unary_op.op, "!") == 0) {
+            return TYPE_BOOL;
+        }
+    }
     return TYPE_INT;
 }
 
 static void gen_binary_op(Codegen *cg, ASTNode *node) {
     const char *op = node->data.binary_op.op;
+    
+    // Handle short-circuit && and ||
+    if (strcmp(op, "&&") == 0) {
+        gen_expr(cg, node->data.binary_op.left);
+        emit(cg, "    cmp rax, 0\n");
+        int false_label = get_label(cg);
+        int end_label = get_label(cg);
+        emit(cg, "    je .L%d\n", false_label);
+        
+        // Left side is true, evaluate right side
+        gen_expr(cg, node->data.binary_op.right);
+        emit(cg, "    cmp rax, 0\n");
+        emit(cg, "    setne al\n");
+        emit(cg, "    movzx rax, al\n");
+        emit(cg, "    jmp .L%d\n", end_label);
+        
+        // Left side is false
+        emit(cg, ".L%d:\n", false_label);
+        emit(cg, "    mov rax, 0\n");
+        emit(cg, ".L%d:\n", end_label);
+        return;
+    }
+    
+    if (strcmp(op, "||") == 0) {
+        gen_expr(cg, node->data.binary_op.left);
+        emit(cg, "    cmp rax, 0\n");
+        int true_label = get_label(cg);
+        int end_label = get_label(cg);
+        emit(cg, "    jne .L%d\n", true_label);
+        
+        // Left side is false, evaluate right side
+        gen_expr(cg, node->data.binary_op.right);
+        emit(cg, "    cmp rax, 0\n");
+        emit(cg, "    setne al\n");
+        emit(cg, "    movzx rax, al\n");
+        emit(cg, "    jmp .L%d\n", end_label);
+        
+        // Left side is true
+        emit(cg, ".L%d:\n", true_label);
+        emit(cg, "    mov rax, 1\n");
+        emit(cg, ".L%d:\n", end_label);
+        return;
+    }
+    
+    // Regular binary operations
     gen_expr(cg, node->data.binary_op.left);
     emit(cg, "    push rax\n");
     gen_expr(cg, node->data.binary_op.right);
@@ -329,6 +388,9 @@ static void gen_expr(Codegen *cg, ASTNode *node) {
     switch (node->type) {
         case NODE_INT_LITERAL:
             emit(cg, "    mov rax, %d\n", node->data.int_literal.value);
+            return;
+        case NODE_BOOL_LITERAL:
+            emit(cg, "    mov rax, %d\n", node->data.bool_literal.value ? 1 : 0);
             return;
         case NODE_STRING_LITERAL: {
             int label_id = add_string(cg, node->data.string_literal.value);
