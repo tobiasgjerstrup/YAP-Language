@@ -25,6 +25,270 @@ char* read_file(const char *filename) {
     return buffer;
 }
 
+// Resolve relative import paths (for now, just join paths)
+char* resolve_import_path(const char *current_file, const char *import_path) {
+    // If import_path is absolute or already has paths, use as-is
+    if (import_path[0] == '/' || strstr(import_path, "/")) {
+        char *resolved = malloc(strlen(import_path) + 1);
+        strcpy(resolved, import_path);
+        return resolved;
+    }
+    
+    // Otherwise, resolve relative to current file's directory
+    // For simple implementation, just use the import path directly
+    // In a real system, you'd extract the directory from current_file
+    char *resolved = malloc(strlen(import_path) + 1);
+    strcpy(resolved, import_path);
+    return resolved;
+}
+
+// Deep copy an AST node
+ASTNode* ast_copy_node(ASTNode *node) {
+    if (!node) return NULL;
+    
+    ASTNode *copy = malloc(sizeof(ASTNode));
+    copy->type = node->type;
+    copy->line = node->line;
+    copy->column = node->column;
+    copy->statement_count = node->statement_count;
+    
+    if (node->statement_count > 0 && node->statements) {
+        copy->statements = malloc(node->statement_count * sizeof(ASTNode*));
+        for (int i = 0; i < node->statement_count; i++) {
+            copy->statements[i] = ast_copy_node(node->statements[i]);
+        }
+    } else {
+        copy->statements = NULL;
+    }
+    
+    // Copy data based on node type
+    switch (node->type) {
+        case NODE_FUNC_DECL: {
+            copy->data.func_decl.name = malloc(strlen(node->data.func_decl.name) + 1);
+            strcpy(copy->data.func_decl.name, node->data.func_decl.name);
+            copy->data.func_decl.param_count = node->data.func_decl.param_count;
+            copy->data.func_decl.is_exported = node->data.func_decl.is_exported;
+            if (node->data.func_decl.param_count > 0) {
+                copy->data.func_decl.params = malloc(node->data.func_decl.param_count * sizeof(char*));
+                for (int i = 0; i < node->data.func_decl.param_count; i++) {
+                    copy->data.func_decl.params[i] = malloc(strlen(node->data.func_decl.params[i]) + 1);
+                    strcpy(copy->data.func_decl.params[i], node->data.func_decl.params[i]);
+                }
+            } else {
+                copy->data.func_decl.params = NULL;
+            }
+            copy->data.func_decl.body = ast_copy_node(node->data.func_decl.body);
+            break;
+        }
+        case NODE_VAR_DECL: {
+            copy->data.var_decl.name = malloc(strlen(node->data.var_decl.name) + 1);
+            strcpy(copy->data.var_decl.name, node->data.var_decl.name);
+            copy->data.var_decl.value = ast_copy_node(node->data.var_decl.value);
+            break;
+        }
+        case NODE_ASSIGNMENT: {
+            copy->data.assignment.name = malloc(strlen(node->data.assignment.name) + 1);
+            strcpy(copy->data.assignment.name, node->data.assignment.name);
+            copy->data.assignment.value = ast_copy_node(node->data.assignment.value);
+            break;
+        }
+        case NODE_IDENTIFIER: {
+            copy->data.identifier.name = malloc(strlen(node->data.identifier.name) + 1);
+            strcpy(copy->data.identifier.name, node->data.identifier.name);
+            break;
+        }
+        case NODE_STRING_LITERAL: {
+            copy->data.string_literal.value = malloc(strlen(node->data.string_literal.value) + 1);
+            strcpy(copy->data.string_literal.value, node->data.string_literal.value);
+            break;
+        }
+        case NODE_CALL: {
+            copy->data.call.name = malloc(strlen(node->data.call.name) + 1);
+            strcpy(copy->data.call.name, node->data.call.name);
+            copy->data.call.arg_count = node->data.call.arg_count;
+            if (node->data.call.arg_count > 0) {
+                copy->data.call.args = malloc(node->data.call.arg_count * sizeof(ASTNode*));
+                for (int i = 0; i < node->data.call.arg_count; i++) {
+                    copy->data.call.args[i] = ast_copy_node(node->data.call.args[i]);
+                }
+            } else {
+                copy->data.call.args = NULL;
+            }
+            break;
+        }
+        case NODE_BINARY_OP: {
+            copy->data.binary_op.left = ast_copy_node(node->data.binary_op.left);
+            copy->data.binary_op.right = ast_copy_node(node->data.binary_op.right);
+            copy->data.binary_op.op = malloc(strlen(node->data.binary_op.op) + 1);
+            strcpy(copy->data.binary_op.op, node->data.binary_op.op);
+            break;
+        }
+        case NODE_UNARY_OP: {
+            copy->data.unary_op.operand = ast_copy_node(node->data.unary_op.operand);
+            copy->data.unary_op.op = malloc(strlen(node->data.unary_op.op) + 1);
+            strcpy(copy->data.unary_op.op, node->data.unary_op.op);
+            break;
+        }
+        case NODE_RETURN_STMT:
+            copy->data.return_stmt.value = ast_copy_node(node->data.return_stmt.value);
+            break;
+        case NODE_PRINT_STMT:
+            copy->data.print_stmt.value = ast_copy_node(node->data.print_stmt.value);
+            break;
+        case NODE_IF_STMT:
+            copy->data.if_stmt.condition = ast_copy_node(node->data.if_stmt.condition);
+            copy->data.if_stmt.then_branch = ast_copy_node(node->data.if_stmt.then_branch);
+            copy->data.if_stmt.else_branch = ast_copy_node(node->data.if_stmt.else_branch);
+            break;
+        case NODE_WHILE_STMT:
+            copy->data.while_stmt.condition = ast_copy_node(node->data.while_stmt.condition);
+            copy->data.while_stmt.body = ast_copy_node(node->data.while_stmt.body);
+            break;
+        case NODE_BLOCK:
+        case NODE_PROGRAM:
+            // Already handled above
+            break;
+        case NODE_INT_LITERAL:
+        case NODE_BOOL_LITERAL:
+            copy->data = node->data;
+            break;
+        case NODE_ARRAY_LITERAL: {
+            copy->data.array_literal.element_count = node->data.array_literal.element_count;
+            if (node->data.array_literal.element_count > 0) {
+                copy->data.array_literal.elements = malloc(node->data.array_literal.element_count * sizeof(ASTNode*));
+                for (int i = 0; i < node->data.array_literal.element_count; i++) {
+                    copy->data.array_literal.elements[i] = ast_copy_node(node->data.array_literal.elements[i]);
+                }
+            } else {
+                copy->data.array_literal.elements = NULL;
+            }
+            break;
+        }
+        case NODE_ARRAY_INDEX:
+            copy->data.array_index.array = ast_copy_node(node->data.array_index.array);
+            copy->data.array_index.index = ast_copy_node(node->data.array_index.index);
+            break;
+        default:
+            copy->data = node->data;
+            break;
+    }
+    
+    return copy;
+}
+
+// Process imports recursively: load files, parse them, and collect exported functions
+int process_imports(ASTNode *program, ASTNode ***imported_functions, int *imported_count, const char *base_dir) {
+    if (!program || program->type != NODE_PROGRAM) {
+        return 0;
+    }
+    
+    int result = 0;
+    
+    for (int i = 0; i < program->statement_count; i++) {
+        ASTNode *stmt = program->statements[i];
+        
+        if (stmt->type == NODE_IMPORT) {
+            // Load and parse the imported module
+            char *import_path = stmt->data.import_stmt.module_path;
+            fprintf(stderr, "Importing from: %s\n", import_path);
+            
+            char *source = read_file(import_path);
+            if (!source) {
+                fprintf(stderr, "Error: Could not load imported module '%s'\n", import_path);
+                return 1;
+            }
+            
+            Parser *import_parser = parser_create(source);
+            ASTNode *imported_program = parser_parse(import_parser);
+            
+            if (import_parser->error) {
+                fprintf(stderr, "Parse error in imported module '%s': %s\n", import_path, import_parser->error_msg);
+                parser_destroy(import_parser);
+                free(source);
+                return 1;
+            }
+            
+            // If selective imports, track which functions to include
+            int include_all = (stmt->data.import_stmt.import_count == 0);
+            
+            // Collect exported functions
+            if (imported_program && imported_program->type == NODE_PROGRAM) {
+                for (int j = 0; j < imported_program->statement_count; j++) {
+                    ASTNode *imported_stmt = imported_program->statements[j];
+                    
+                    if (imported_stmt->type == NODE_FUNC_DECL) {
+                        int should_include = include_all;
+                        
+                        // If selective import, check if this function is in the import list
+                        if (!include_all) {
+                            for (int k = 0; k < stmt->data.import_stmt.import_count; k++) {
+                                if (strcmp(imported_stmt->data.func_decl.name, stmt->data.import_stmt.imports[k]) == 0) {
+                                    should_include = 1;
+                                    break;
+                                }
+                            }
+                        }
+                        
+                        if (should_include && imported_stmt->data.func_decl.is_exported) {
+                            // Add a deep copy to imported functions
+                            *imported_functions = realloc(*imported_functions, (*imported_count + 1) * sizeof(ASTNode*));
+                            (*imported_functions)[*imported_count] = ast_copy_node(imported_stmt);
+                            (*imported_count)++;
+                        }
+                    }
+                }
+            }
+            
+            // Free the imported program and parser
+            // Note: We DON'T call ast_free on imported_program because we've already
+            // copied the nodes we need. Just free the parser and source.
+            // The statements array in imported_program will be freed, but the individual
+            // function nodes are now owned by the copies we made.
+            imported_program->statements = NULL;  // Prevent ast_free from freeing statement pointers
+            imported_program->statement_count = 0;
+            ast_free(imported_program);
+            parser_destroy(import_parser);
+            free(source);
+        }
+    }
+    
+    return result;
+}
+
+// Merge imported functions into the program
+void merge_imports(ASTNode *program, ASTNode **imported_functions, int imported_count) {
+    if (!program || program->type != NODE_PROGRAM) {
+        return;
+    }
+    
+    // Filter out import statements and collect non-import statements
+    ASTNode **new_statements = malloc((program->statement_count + imported_count) * sizeof(ASTNode*));
+    int new_count = 0;
+    
+    for (int i = 0; i < program->statement_count; i++) {
+        if (program->statements[i]->type != NODE_IMPORT) {
+            new_statements[new_count++] = program->statements[i];
+        }
+    }
+    
+    // Add imported functions at the beginning (before main code)
+    for (int i = 0; i < imported_count; i++) {
+        // Prepend imported functions
+        // Shift existing statements
+        for (int j = new_count; j > 0; j--) {
+            new_statements[j] = new_statements[j-1];
+        }
+        new_statements[0] = imported_functions[i];
+        new_count++;
+    }
+    
+    if (program->statements) {
+        free(program->statements);
+    }
+    program->statements = new_statements;
+    program->statement_count = new_count;
+}
+
 void run_file(const char *filename) {
     char *source = read_file(filename);
     if (!source) return;
@@ -115,6 +379,23 @@ int main(int argc, char *argv[]) {
             parser_destroy(parser);
             free(source);
             return 1;
+        }
+
+        // Process imports
+        ASTNode **imported_functions = NULL;
+        int imported_count = 0;
+        if (process_imports(program, &imported_functions, &imported_count, ".") != 0) {
+            fprintf(stderr, "Import processing failed\n");
+            ast_free(program);
+            parser_destroy(parser);
+            free(source);
+            return 1;
+        }
+        
+        // Merge imported functions into the program
+        merge_imports(program, imported_functions, imported_count);
+        if (imported_functions) {
+            free(imported_functions);
         }
 
         char error[256];

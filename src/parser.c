@@ -56,6 +56,8 @@ static void consume(Parser *parser, TokenType type, const char *msg) {
 // Forward declarations
 static ASTNode* parse_statement(Parser *parser);
 static ASTNode* parse_expression(Parser *parser);
+static ASTNode* parse_func_decl_internal(Parser *parser, int is_exported);
+static ASTNode* parse_import_stmt(Parser *parser);
 
 static ASTNode* parse_primary(Parser *parser) {
     if (match(parser, TOKEN_INT)) {
@@ -418,8 +420,10 @@ static ASTNode* parse_print_stmt(Parser *parser) {
     return node;
 }
 
-static ASTNode* parse_func_decl(Parser *parser) {
+static ASTNode* parse_func_decl_internal(Parser *parser, int is_exported) {
     Token start_tok = parser->current_token;
+    
+    // Always consume TOKEN_FN regardless of is_exported
     consume(parser, TOKEN_FN, "Expected 'fn'");
     
     if (!match(parser, TOKEN_IDENTIFIER)) {
@@ -462,8 +466,68 @@ static ASTNode* parse_func_decl(Parser *parser) {
     ASTNode *body = parse_block(parser);
     
     ASTNode *node = ast_create_func_decl(name, params, param_count, body);
+    node->data.func_decl.is_exported = is_exported;
     set_location(node, start_tok);
     free(name);
+    return node;
+}
+
+static ASTNode* parse_import_stmt(Parser *parser) {
+    Token start_tok = parser->current_token;
+    consume(parser, TOKEN_IMPORT, "Expected 'import'");
+    
+    // Case 1: import { func1, func2 } from "file.yap"
+    // Case 2: import "file.yap" (import all)
+    
+    char **imports = NULL;
+    int import_count = 0;
+    
+    if (match(parser, TOKEN_LBRACE)) {
+        advance(parser);
+        
+        if (!check(parser, TOKEN_RBRACE)) {
+            imports = malloc(sizeof(char*) * 256);
+            
+            if (match(parser, TOKEN_IDENTIFIER)) {
+                imports[import_count] = malloc(strlen(parser->current_token.value) + 1);
+                strcpy(imports[import_count], parser->current_token.value);
+                import_count++;
+                advance(parser);
+                
+                while (match(parser, TOKEN_COMMA)) {
+                    advance(parser);
+                    if (match(parser, TOKEN_IDENTIFIER)) {
+                        imports[import_count] = malloc(strlen(parser->current_token.value) + 1);
+                        strcpy(imports[import_count], parser->current_token.value);
+                        import_count++;
+                        advance(parser);
+                    }
+                }
+            }
+        }
+        
+        consume(parser, TOKEN_RBRACE, "Expected '}'");
+        consume(parser, TOKEN_FROM, "Expected 'from'");
+    }
+    
+    // Get module path
+    if (!match(parser, TOKEN_STRING)) {
+        set_error(parser, "Expected module path string");
+        return NULL;
+    }
+    
+    char *module_path = malloc(strlen(parser->current_token.value) + 1);
+    strcpy(module_path, parser->current_token.value);
+    advance(parser);
+    
+    // Consume optional semicolon
+    if (match(parser, TOKEN_SEMICOLON)) {
+        advance(parser);
+    }
+    
+    ASTNode *node = ast_create_import_stmt(module_path, imports, import_count);
+    set_location(node, start_tok);
+    free(module_path);
     return node;
 }
 
@@ -498,12 +562,27 @@ static ASTNode* parse_assignment_or_expression(Parser *parser) {
 static ASTNode* parse_statement(Parser *parser) {
     if (parser->error) return NULL;
     
+    if (match(parser, TOKEN_IMPORT)) {
+        return parse_import_stmt(parser);
+    }
+    
+    if (match(parser, TOKEN_EXPORT)) {
+        advance(parser);  // consume EXPORT
+        if (!match(parser, TOKEN_FN)) {
+            set_error(parser, "export can only be used with functions");
+            return NULL;
+        }
+        // parse_func_decl_internal will consume FN
+        ASTNode *func = parse_func_decl_internal(parser, 1);
+        return func;
+    }
+    
     if (match(parser, TOKEN_VAR)) {
         return parse_var_decl(parser);
     }
     
     if (match(parser, TOKEN_FN)) {
-        return parse_func_decl(parser);
+        return parse_func_decl_internal(parser, 0);
     }
     
     if (match(parser, TOKEN_IF)) {

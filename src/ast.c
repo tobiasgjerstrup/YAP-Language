@@ -34,6 +34,7 @@ ASTNode* ast_create_func_decl(const char *name, char **params, int param_count, 
     node->data.func_decl.params = params;
     node->data.func_decl.param_count = param_count;
     node->data.func_decl.body = body;
+    node->data.func_decl.is_exported = 0;
     return node;
 }
 
@@ -145,6 +146,15 @@ ASTNode* ast_create_array_index(ASTNode *array, ASTNode *index) {
     return node;
 }
 
+ASTNode* ast_create_import_stmt(const char *module_path, char **imports, int import_count) {
+    ASTNode *node = ast_create_node(NODE_IMPORT);
+    node->data.import_stmt.module_path = malloc(strlen(module_path) + 1);
+    strcpy(node->data.import_stmt.module_path, module_path);
+    node->data.import_stmt.imports = imports;
+    node->data.import_stmt.import_count = import_count;
+    return node;
+}
+
 void ast_free(ASTNode *node) {
     if (!node) return;
     
@@ -224,6 +234,15 @@ void ast_free(ASTNode *node) {
         case NODE_ARRAY_INDEX:
             ast_free(node->data.array_index.array);
             ast_free(node->data.array_index.index);
+            break;
+        case NODE_IMPORT:
+            free(node->data.import_stmt.module_path);
+            if (node->data.import_stmt.imports) {
+                for (int i = 0; i < node->data.import_stmt.import_count; i++) {
+                    free(node->data.import_stmt.imports[i]);
+                }
+                free(node->data.import_stmt.imports);
+            }
             break;
         default:
             break;

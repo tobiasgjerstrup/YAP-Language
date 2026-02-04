@@ -19,6 +19,9 @@ typedef enum {
     TOKEN_PRINT,
     TOKEN_TRUE,
     TOKEN_FALSE,
+    TOKEN_IMPORT,
+    TOKEN_EXPORT,
+    TOKEN_FROM,
     
     // Operators
     TOKEN_PLUS,

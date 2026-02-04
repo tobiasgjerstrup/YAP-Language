@@ -21,7 +21,8 @@ typedef enum {
     NODE_IDENTIFIER,
     NODE_BLOCK,
     NODE_ARRAY_LITERAL,
-    NODE_ARRAY_INDEX
+    NODE_ARRAY_INDEX,
+    NODE_IMPORT
 } NodeType;
 
 typedef struct {
@@ -34,7 +35,14 @@ typedef struct {
     char **params;
     int param_count;
     ASTNode *body;
+    int is_exported;
 } FuncDecl;
+
+typedef struct {
+    char *module_path;      // e.g., "utils.yap"
+    char **imports;         // NULL if import all, array of function names if selective
+    int import_count;       // 0 if import all
+} ImportStmt;
 
 typedef struct {
     ASTNode *condition;
@@ -130,6 +138,7 @@ struct ASTNode {
         Identifier identifier;
         ArrayLiteral array_literal;
         ArrayIndex array_index;
+        ImportStmt import_stmt;
     } data;
     ASTNode **statements; // for PROGRAM and BLOCK
     int statement_count;
@@ -153,6 +162,7 @@ ASTNode* ast_create_bool_literal(int value);
 ASTNode* ast_create_identifier(const char *name);
 ASTNode* ast_create_array_literal(ASTNode **elements, int count);
 ASTNode* ast_create_array_index(ASTNode *array, ASTNode *index);
+ASTNode* ast_create_import_stmt(const char *module_path, char **imports, int import_count);
 void ast_free(ASTNode *node);
 
 #endif // AST_H

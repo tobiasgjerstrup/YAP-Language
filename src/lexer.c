@@ -119,6 +119,9 @@ static TokenType keyword_type(const char *ident) {
     if (strcmp(ident, "print") == 0) return TOKEN_PRINT;
     if (strcmp(ident, "true") == 0) return TOKEN_TRUE;
     if (strcmp(ident, "false") == 0) return TOKEN_FALSE;
+    if (strcmp(ident, "import") == 0) return TOKEN_IMPORT;
+    if (strcmp(ident, "export") == 0) return TOKEN_EXPORT;
+    if (strcmp(ident, "from") == 0) return TOKEN_FROM;
     return TOKEN_IDENTIFIER;
 }
 
