@@ -9,9 +9,12 @@
 #define MAX_FUNCTIONS 256
 #define MAX_STRINGS 256
 
+typedef enum { TYPE_INT = 0, TYPE_STRING = 1 } VarType;
+
 typedef struct {
     char *name;
     int offset;
+    VarType type;
 } Local;
 
 typedef struct {
@@ -85,7 +88,23 @@ static int add_local(Codegen *cg, const char *name) {
     cg->locals[cg->local_count].name = malloc(strlen(name) + 1);
     strcpy(cg->locals[cg->local_count].name, name);
     cg->locals[cg->local_count].offset = (cg->local_count + 1) * 8;
+    cg->locals[cg->local_count].type = TYPE_INT;  // Default to int
     return cg->local_count++;
+}
+
+static void set_local_type(Codegen *cg, const char *name, VarType type) {
+    int idx = find_local(cg, name);
+    if (idx >= 0) {
+        cg->locals[idx].type = type;
+    }
+}
+
+static VarType get_local_type(Codegen *cg, const char *name) {
+    int idx = find_local(cg, name);
+    if (idx >= 0) {
+        return cg->locals[idx].type;
+    }
+    return TYPE_INT;  // Default
 }
 
 static void free_locals(Codegen *cg) {
@@ -211,6 +230,23 @@ static void prepass_functions(Codegen *cg, ASTNode *node) {
 static void gen_expr(Codegen *cg, ASTNode *node);
 static void gen_stmt(Codegen *cg, ASTNode *node);
 
+static VarType expr_is_string(Codegen *cg, ASTNode *node) {
+    if (!node) return TYPE_INT;
+    if (node->type == NODE_STRING_LITERAL) return TYPE_STRING;
+    if (node->type == NODE_IDENTIFIER) return get_local_type(cg, node->data.identifier.name);
+    if (node->type == NODE_BINARY_OP) {
+        // String concatenation: if operator is + and either operand is string, result is string
+        if (strcmp(node->data.binary_op.op, "+") == 0) {
+            VarType left_type = expr_is_string(cg, node->data.binary_op.left);
+            VarType right_type = expr_is_string(cg, node->data.binary_op.right);
+            if (left_type == TYPE_STRING || right_type == TYPE_STRING) {
+                return TYPE_STRING;
+            }
+        }
+    }
+    return TYPE_INT;
+}
+
 static void gen_binary_op(Codegen *cg, ASTNode *node) {
     const char *op = node->data.binary_op.op;
     gen_expr(cg, node->data.binary_op.left);
@@ -219,7 +255,20 @@ static void gen_binary_op(Codegen *cg, ASTNode *node) {
     emit(cg, "    pop rcx\n");
 
     if (strcmp(op, "+") == 0) {
-        emit(cg, "    add rax, rcx\n");
+        VarType left_type = expr_is_string(cg, node->data.binary_op.left);
+        VarType right_type = expr_is_string(cg, node->data.binary_op.right);
+        
+        if (left_type == TYPE_STRING || right_type == TYPE_STRING) {
+            // String concatenation: call yap_concat_strings(rcx, rax)
+            // rax = right_val, rcx = left_val
+            emit(cg, "    mov rdi, rcx\n");        // arg1 = left
+            emit(cg, "    mov rsi, rax\n");        // arg2 = right
+            emit(cg, "    xor eax, eax\n");
+            emit(cg, "    call yap_concat_strings\n");
+        } else {
+            // Integer addition
+            emit(cg, "    add rax, rcx\n");
+        }
         return;
     }
 
@@ -356,11 +405,21 @@ static void gen_expr(Codegen *cg, ASTNode *node) {
 }
 
 static void gen_print(Codegen *cg, ASTNode *node) {
+    VarType print_type = expr_is_string(cg, node->data.print_stmt.value);
     gen_expr(cg, node->data.print_stmt.value);
     emit(cg, "    mov rsi, rax\n");
-    emit(cg, "    lea rdi, [rip + .LC0]\n");
-    emit(cg, "    xor eax, eax\n");
-    emit(cg, "    call printf@PLT\n");
+    
+    if (print_type == TYPE_STRING) {
+        // Print string: use puts
+        emit(cg, "    mov rdi, rsi\n");           // arg = string pointer
+        emit(cg, "    xor eax, eax\n");
+        emit(cg, "    call puts@PLT\n");          // puts prints string and newline
+    } else {
+        // Print integer: use printf with %ld format
+        emit(cg, "    lea rdi, [rip + .LC0]\n");
+        emit(cg, "    xor eax, eax\n");
+        emit(cg, "    call printf@PLT\n");
+    }
 }
 
 static void gen_stmt(Codegen *cg, ASTNode *node) {
@@ -378,10 +437,14 @@ static void gen_stmt(Codegen *cg, ASTNode *node) {
                 set_error(cg, node, "Internal error: missing variable '%s'", node->data.var_decl.name);
                 return;
             }
+            // Determine type from initialization value
             if (node->data.var_decl.value) {
+                VarType init_type = expr_is_string(cg, node->data.var_decl.value);
+                set_local_type(cg, node->data.var_decl.name, init_type);
                 gen_expr(cg, node->data.var_decl.value);
                 emit(cg, "    mov QWORD PTR [rbp-%d], rax\n", cg->locals[idx].offset);
             } else {
+                set_local_type(cg, node->data.var_decl.name, TYPE_INT);
                 emit(cg, "    mov QWORD PTR [rbp-%d], 0\n", cg->locals[idx].offset);
             }
             return;
@@ -392,6 +455,9 @@ static void gen_stmt(Codegen *cg, ASTNode *node) {
                 set_error(cg, node, "Undefined variable '%s'", node->data.assignment.name);
                 return;
             }
+            // Update type based on assigned value
+            VarType assign_type = expr_is_string(cg, node->data.assignment.value);
+            set_local_type(cg, node->data.assignment.name, assign_type);
             gen_expr(cg, node->data.assignment.value);
             emit(cg, "    mov QWORD PTR [rbp-%d], rax\n", cg->locals[idx].offset);
             return;
@@ -470,6 +536,58 @@ static void emit_string_section(Codegen *cg) {
     }
 }
 
+static void emit_runtime_helpers(Codegen *cg) {
+    // yap_concat_strings(rdi=str1, rsi=str2) -> rax=result (malloc'd)
+    emit(cg, "\n.globl yap_concat_strings\n");
+    emit(cg, ".type yap_concat_strings, @function\n");
+    emit(cg, "yap_concat_strings:\n");
+    emit(cg, "    push rbp\n");
+    emit(cg, "    mov rbp, rsp\n");
+    emit(cg, "    push rbx\n");
+    emit(cg, "    push r12\n");
+    emit(cg, "    push r13\n");
+    
+    // rdi = str1, rsi = str2 (SysV ABI)
+    emit(cg, "    mov r12, rdi\n");
+    emit(cg, "    mov r13, rsi\n");
+    
+    // Get total length: len1 + len2 + 1
+    emit(cg, "    mov rdi, r12\n");
+    emit(cg, "    xor eax, eax\n");
+    emit(cg, "    call strlen@PLT\n");
+    emit(cg, "    mov r8, rax\n");
+    
+    emit(cg, "    mov rdi, r13\n");
+    emit(cg, "    xor eax, eax\n");
+    emit(cg, "    call strlen@PLT\n");
+    
+    emit(cg, "    add rax, r8\n");
+    emit(cg, "    add rax, 1\n");
+    
+    // malloc(total_len)
+    emit(cg, "    mov rdi, rax\n");
+    emit(cg, "    call malloc@PLT\n");
+    emit(cg, "    mov rbx, rax\n");
+    
+    // strcpy(result, str1)
+    emit(cg, "    mov rdi, rbx\n");
+    emit(cg, "    mov rsi, r12\n");
+    emit(cg, "    call strcpy@PLT\n");
+    
+    // strcat(result, str2)
+    emit(cg, "    mov rdi, rbx\n");
+    emit(cg, "    mov rsi, r13\n");
+    emit(cg, "    call strcat@PLT\n");
+    
+    emit(cg, "    mov rax, rbx\n");
+    
+    emit(cg, "    pop r13\n");
+    emit(cg, "    pop r12\n");
+    emit(cg, "    pop rbx\n");
+    emit(cg, "    pop rbp\n");
+    emit(cg, "    ret\n");
+}
+
 static int emit_assembly(Codegen *cg, ASTNode *program, const char *asm_path) {
     cg->out = fopen(asm_path, "w");
     if (!cg->out) {
@@ -480,6 +598,7 @@ static int emit_assembly(Codegen *cg, ASTNode *program, const char *asm_path) {
     emit(cg, ".intel_syntax noprefix\n");
     emit_string_section(cg);
     emit(cg, ".text\n");
+    emit_runtime_helpers(cg);
 
     // Emit all function definitions FIRST
     for (int i = 0; i < cg->function_count; i++) {
@@ -518,7 +637,7 @@ static int emit_assembly(Codegen *cg, ASTNode *program, const char *asm_path) {
     }
 
     // Now emit main
-    emit(cg, ".globl main\n");
+    emit(cg, "\n.globl main\n");
     emit(cg, ".type main, @function\n");
     emit(cg, "main:\n");
     emit(cg, "    push rbp\n");
