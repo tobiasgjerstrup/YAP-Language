@@ -47,6 +47,54 @@ static int write_file_contents(const char *path, const char *content, const char
     return written == len ? 0 : -1;
 }
 
+static ArrayValue* array_create(int capacity) {
+    if (capacity < 0) {
+        return NULL;
+    }
+
+    ArrayValue *arr = malloc(sizeof(ArrayValue));
+    if (!arr) {
+        return NULL;
+    }
+
+    arr->length = 0;
+    arr->capacity = capacity;
+    arr->items = NULL;
+    if (capacity > 0) {
+        arr->items = malloc(sizeof(Value) * capacity);
+        if (!arr->items) {
+            free(arr);
+            return NULL;
+        }
+    }
+
+    return arr;
+}
+
+static int array_ensure_capacity(ArrayValue *arr, int min_capacity) {
+    if (!arr) {
+        return 0;
+    }
+
+    if (arr->capacity >= min_capacity) {
+        return 1;
+    }
+
+    int new_capacity = arr->capacity > 0 ? arr->capacity : 4;
+    while (new_capacity < min_capacity) {
+        new_capacity *= 2;
+    }
+
+    Value *new_items = realloc(arr->items, sizeof(Value) * new_capacity);
+    if (!new_items) {
+        return 0;
+    }
+
+    arr->items = new_items;
+    arr->capacity = new_capacity;
+    return 1;
+}
+
 // Value functions
 Value value_create_int(int val) {
     Value v;
@@ -76,6 +124,13 @@ Value value_create_null() {
     return v;
 }
 
+Value value_create_array(ArrayValue *arr) {
+    Value v;
+    v.type = VALUE_ARRAY;
+    v.data.array_val = arr;
+    return v;
+}
+
 static Value value_copy(Value v) {
     if (v.type == VALUE_STRING && v.data.string_val) {
         return value_create_string(v.data.string_val);
@@ -94,6 +149,7 @@ int value_to_int(Value v) {
         case VALUE_INT: return v.data.int_val;
         case VALUE_BOOL: return v.data.bool_val ? 1 : 0;
         case VALUE_STRING: return atoi(v.data.string_val);
+        case VALUE_ARRAY: return v.data.array_val ? v.data.array_val->length : 0;
         case VALUE_NULL: return 0;
     }
     return 0;
@@ -109,6 +165,12 @@ char* value_to_string(Value v) {
             return v.data.bool_val ? "true" : "false";
         case VALUE_STRING:
             return v.data.string_val;
+        case VALUE_ARRAY:
+            if (v.data.array_val) {
+                snprintf(buffer, sizeof(buffer), "array(len=%d)", v.data.array_val->length);
+                return buffer;
+            }
+            return "array(len=0)";
         case VALUE_NULL:
             return "null";
     }
@@ -120,6 +182,7 @@ int value_to_bool(Value v) {
         case VALUE_INT: return v.data.int_val != 0;
         case VALUE_BOOL: return v.data.bool_val;
         case VALUE_STRING: return strlen(v.data.string_val) > 0;
+        case VALUE_ARRAY: return v.data.array_val && v.data.array_val->length > 0;
         case VALUE_NULL: return 0;
     }
     return 0;
@@ -405,6 +468,60 @@ static Value eval_call(Interpreter *interp, ASTNode *node) {
         return value_create_int(rc);
     }
 
+    if (strcmp(node->data.call.name, "push") == 0) {
+        if (node->data.call.arg_count != 2) {
+            fprintf(stderr, "Runtime Error: Line %d:%d: push() expects 2 arguments: array and value\n",
+                    node->line, node->column);
+            return value_create_null();
+        }
+
+        Value array_val = eval_node(interp, node->data.call.args[0]);
+        if (array_val.type != VALUE_ARRAY || !array_val.data.array_val) {
+            value_free(array_val);
+            fprintf(stderr, "Runtime Error: Line %d:%d: push() expects an array value\n",
+                    node->line, node->column);
+            return value_create_null();
+        }
+
+        Value item_val = eval_node(interp, node->data.call.args[1]);
+        ArrayValue *arr = array_val.data.array_val;
+        if (!array_ensure_capacity(arr, arr->length + 1)) {
+            value_free(item_val);
+            fprintf(stderr, "Runtime Error: Line %d:%d: push() failed to grow array\n",
+                    node->line, node->column);
+            return value_create_null();
+        }
+
+        arr->items[arr->length] = value_copy(item_val);
+        arr->length += 1;
+        value_free(item_val);
+        return array_val;
+    }
+
+    if (strcmp(node->data.call.name, "pop") == 0) {
+        if (node->data.call.arg_count != 1) {
+            fprintf(stderr, "Runtime Error: Line %d:%d: pop() expects 1 argument: array\n",
+                    node->line, node->column);
+            return value_create_null();
+        }
+
+        Value array_val = eval_node(interp, node->data.call.args[0]);
+        if (array_val.type != VALUE_ARRAY || !array_val.data.array_val) {
+            value_free(array_val);
+            fprintf(stderr, "Runtime Error: Line %d:%d: pop() expects an array value\n",
+                    node->line, node->column);
+            return value_create_null();
+        }
+
+        ArrayValue *arr = array_val.data.array_val;
+        if (arr->length <= 0) {
+            return value_create_int(0);
+        }
+
+        arr->length -= 1;
+        return arr->items[arr->length];
+    }
+
     Function *func = find_function(interp, node->data.call.name);
     
     if (!func) {
@@ -575,6 +692,56 @@ static Value eval_node(Interpreter *interp, ASTNode *node) {
             } else {
                 result = var->value;
             }
+            return result;
+        }
+
+        case NODE_ARRAY_LITERAL: {
+            int count = node->data.array_literal.element_count;
+            ArrayValue *arr = array_create(count);
+            if (!arr) {
+                fprintf(stderr, "Runtime Error: Line %d:%d: Failed to allocate array\n",
+                        node->line, node->column);
+                return value_create_null();
+            }
+
+            for (int i = 0; i < count; i++) {
+                Value elem = eval_node(interp, node->data.array_literal.elements[i]);
+                if (!array_ensure_capacity(arr, arr->length + 1)) {
+                    value_free(elem);
+                    fprintf(stderr, "Runtime Error: Line %d:%d: Failed to grow array\n",
+                            node->line, node->column);
+                    return value_create_null();
+                }
+                arr->items[arr->length] = value_copy(elem);
+                arr->length += 1;
+                value_free(elem);
+            }
+
+            return value_create_array(arr);
+        }
+
+        case NODE_ARRAY_INDEX: {
+            Value array_val = eval_node(interp, node->data.array_index.array);
+            Value index_val = eval_node(interp, node->data.array_index.index);
+            if (array_val.type != VALUE_ARRAY || !array_val.data.array_val) {
+                value_free(index_val);
+                value_free(array_val);
+                fprintf(stderr, "Runtime Error: Line %d:%d: Indexing requires an array\n",
+                        node->line, node->column);
+                return value_create_null();
+            }
+
+            int idx = value_to_int(index_val);
+            value_free(index_val);
+            ArrayValue *arr = array_val.data.array_val;
+            if (idx < 0 || idx >= arr->length) {
+                value_free(array_val);
+                fprintf(stderr, "Runtime Error: Line %d:%d: Array index out of bounds\n",
+                        node->line, node->column);
+                return value_create_null();
+            }
+            Value result = value_copy(arr->items[idx]);
+            value_free(array_val);
             return result;
         }
         

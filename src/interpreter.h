@@ -7,8 +7,11 @@ typedef enum {
     VALUE_INT,
     VALUE_STRING,
     VALUE_BOOL,
-    VALUE_NULL
+    VALUE_NULL,
+    VALUE_ARRAY
 } ValueType;
+
+typedef struct ArrayValue ArrayValue;
 
 typedef struct {
     ValueType type;
@@ -16,8 +19,15 @@ typedef struct {
         int int_val;
         char *string_val;
         int bool_val;
+        ArrayValue *array_val;
     } data;
 } Value;
+
+struct ArrayValue {
+    int length;
+    int capacity;
+    Value *items;
+};
 
 typedef struct Function {
     char *name;
@@ -54,6 +64,7 @@ Value value_create_int(int val);
 Value value_create_string(const char *val);
 Value value_create_bool(int val);
 Value value_create_null();
+Value value_create_array(ArrayValue *arr);
 void value_free(Value v);
 int value_to_int(Value v);
 char* value_to_string(Value v);
