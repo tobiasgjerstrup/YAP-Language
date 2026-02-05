@@ -67,7 +67,17 @@ export function activate(context: vscode.ExtensionContext) {
     }
   });
 
-  context.subscriptions.push(provider, formatter);
+  const formatOnSave = vscode.workspace.onWillSaveTextDocument(event => {
+    if (event.document.languageId !== 'yap') {
+      return;
+    }
+    const edits = formatDocument(event.document, 4);
+    if (edits.length > 0) {
+      event.waitUntil(Promise.resolve(edits));
+    }
+  });
+
+  context.subscriptions.push(provider, formatter, formatOnSave);
 }
 
 function createCompletion(
