@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <time.h>
 
 // Value functions
 Value value_create_int(int val) {
@@ -283,6 +284,20 @@ static Value eval_unary_op(Interpreter *interp, ASTNode *node) {
 }
 
 static Value eval_call(Interpreter *interp, ASTNode *node) {
+    if (strcmp(node->data.call.name, "random") == 0) {
+        if (node->data.call.arg_count != 0) {
+            fprintf(stderr, "Runtime Error: Line %d:%d: random() expects 0 arguments\n",
+                    node->line, node->column);
+            return value_create_null();
+        }
+        static int rand_seeded = 0;
+        if (!rand_seeded) {
+            srand((unsigned)time(NULL));
+            rand_seeded = 1;
+        }
+        return value_create_int(rand());
+    }
+
     Function *func = find_function(interp, node->data.call.name);
     
     if (!func) {

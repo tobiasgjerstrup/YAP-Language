@@ -538,6 +538,15 @@ static void gen_expr(Codegen *cg, ASTNode *node) {
             set_error(cg, node, "Unsupported unary operator '%s'", node->data.unary_op.op);
             return;
         case NODE_CALL: {
+            if (strcmp(node->data.call.name, "random") == 0) {
+                if (node->data.call.arg_count != 0) {
+                    set_error(cg, node, "random() expects 0 arguments");
+                    return;
+                }
+                emit(cg, "    xor eax, eax\n");
+                emit(cg, "    call yap_random\n");
+                return;
+            }
             // Check for built-in array functions
             if (strcmp(node->data.call.name, "push") == 0) {
                 if (node->data.call.arg_count != 2) {
@@ -801,6 +810,33 @@ static void emit_string_section(Codegen *cg) {
 }
 
 static void emit_runtime_helpers(Codegen *cg) {
+    emit(cg, "\n.data\n");
+    emit(cg, ".align 4\n");
+    emit(cg, "yap_rand_seeded:\n");
+    emit(cg, "    .long 0\n");
+    emit(cg, ".text\n");
+
+    // yap_random() -> rax=random int (auto-seeded once)
+    emit(cg, "\n.globl yap_random\n");
+    emit(cg, ".type yap_random, @function\n");
+    emit(cg, "yap_random:\n");
+    emit(cg, "    push rbp\n");
+    emit(cg, "    mov rbp, rsp\n");
+    emit(cg, "    sub rsp, 8\n");
+    emit(cg, "    mov eax, DWORD PTR [rip + yap_rand_seeded]\n");
+    emit(cg, "    cmp eax, 0\n");
+    emit(cg, "    jne .rand_seeded\n");
+    emit(cg, "    xor edi, edi\n");
+    emit(cg, "    call time@PLT\n");
+    emit(cg, "    mov edi, eax\n");
+    emit(cg, "    call srand@PLT\n");
+    emit(cg, "    mov DWORD PTR [rip + yap_rand_seeded], 1\n");
+    emit(cg, ".rand_seeded:\n");
+    emit(cg, "    call rand@PLT\n");
+    emit(cg, "    add rsp, 8\n");
+    emit(cg, "    pop rbp\n");
+    emit(cg, "    ret\n");
+
     // yap_concat_strings(rdi=str1, rsi=str2) -> rax=result (malloc'd)
     emit(cg, "\n.globl yap_concat_strings\n");
     emit(cg, ".type yap_concat_strings, @function\n");
