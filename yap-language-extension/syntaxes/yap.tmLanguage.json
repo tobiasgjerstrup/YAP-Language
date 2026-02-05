@@ -9,7 +9,7 @@
     },
     {
       "name": "keyword.control",
-      "match": "\\b(if|else|while|return)\\b"
+      "match": "\\b(if|else|while|return|import|export|from)\\b"
     },
     {
       "name": "keyword.declaration",
@@ -17,7 +17,11 @@
     },
     {
       "name": "constant.language",
-      "match": "\\b(print|true|false)\\b"
+      "match": "\\b(true|false)\\b"
+    },
+    {
+      "name": "support.function",
+      "match": "\\b(print|read|write|append|push|pop)\\b"
     },
     {
       "name": "string.quoted.double",
@@ -44,7 +48,7 @@
     },
     {
       "name": "punctuation.separator",
-      "match": "(;|,|\\(|\\)|\\{|\\})"
+      "match": "(;|,|\\(|\\)|\\{|\\}|\\[|\\])"
     }
   ]
 }
