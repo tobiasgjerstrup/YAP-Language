@@ -79,7 +79,24 @@ export function activate(context: vscode.ExtensionContext) {
     }
   });
 
-  context.subscriptions.push(provider, formatter, formatOnSave);
+  const definitionProvider = vscode.languages.registerDefinitionProvider('yap', {
+    async provideDefinition(document, position) {
+      const wordRange = document.getWordRangeAtPosition(position, /[A-Za-z_][A-Za-z0-9_]*/);
+      if (!wordRange) {
+        return null;
+      }
+
+      const name = document.getText(wordRange);
+      const localHit = findFunctionDefinitionInDocument(document, name);
+      if (localHit) {
+        return localHit;
+      }
+
+      return await findFunctionDefinitionInWorkspace(name, document.uri);
+    }
+  });
+
+  context.subscriptions.push(provider, formatter, formatOnSave, definitionProvider);
 }
 
 function createCompletion(
@@ -159,6 +176,41 @@ function buildAutoImportEdits(
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function findFunctionDefinitionInDocument(
+  document: vscode.TextDocument,
+  name: string
+): vscode.Location | null {
+  const text = document.getText();
+  const regex = new RegExp(`\\b(?:export\\s+)?fn\\s+${escapeRegExp(name)}\\b`);
+  const match = regex.exec(text);
+  if (!match || typeof match.index !== 'number') {
+    return null;
+  }
+
+  const position = document.positionAt(match.index);
+  return new vscode.Location(document.uri, position);
+}
+
+async function findFunctionDefinitionInWorkspace(
+  name: string,
+  currentUri: vscode.Uri
+): Promise<vscode.Location | null> {
+  const files = await vscode.workspace.findFiles('**/*.yap', '**/node_modules/**');
+  for (const uri of files) {
+    if (uri.toString() === currentUri.toString()) {
+      continue;
+    }
+
+    const doc = await vscode.workspace.openTextDocument(uri);
+    const hit = findFunctionDefinitionInDocument(doc, name);
+    if (hit) {
+      return hit;
+    }
+  }
+
+  return null;
 }
 
 function formatDocument(document: vscode.TextDocument, indentSize: number): vscode.TextEdit[] {
