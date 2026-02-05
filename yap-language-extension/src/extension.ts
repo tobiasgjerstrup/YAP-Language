@@ -161,19 +161,15 @@ function escapeRegExp(value: string): string {
 
 function formatDocument(document: vscode.TextDocument, indentSize: number): vscode.TextEdit[] {
   const text = document.getText();
-  const lines = text.split(/\r?\n/);
-  const edits: vscode.TextEdit[] = [];
+  const lines = normalizeLines(text.split(/\r?\n/));
+  const formattedLines: string[] = [];
 
   let indentLevel = 0;
-  for (let i = 0; i < lines.length; i++) {
-    let line = lines[i];
+  for (const line of lines) {
     const trimmed = line.trim();
 
     if (trimmed.length === 0) {
-      if (line.length > 0) {
-        const range = new vscode.Range(new vscode.Position(i, 0), new vscode.Position(i, line.length));
-        edits.push(vscode.TextEdit.replace(range, ''));
-      }
+      formattedLines.push('');
       continue;
     }
 
@@ -182,19 +178,135 @@ function formatDocument(document: vscode.TextDocument, indentSize: number): vsco
     }
 
     const desiredIndent = ' '.repeat(indentLevel * indentSize);
-    const newLine = desiredIndent + trimmed;
-
-    if (newLine !== line) {
-      const range = new vscode.Range(new vscode.Position(i, 0), new vscode.Position(i, line.length));
-      edits.push(vscode.TextEdit.replace(range, newLine));
-    }
+    formattedLines.push(desiredIndent + trimmed);
 
     if (endsWithOpeningBrace(trimmed)) {
       indentLevel += 1;
     }
   }
 
-  return edits;
+  const formattedText = formattedLines.join('\n');
+  const fullRange = new vscode.Range(document.positionAt(0), document.positionAt(text.length));
+  if (formattedText === text) {
+    return [];
+  }
+
+  return [vscode.TextEdit.replace(fullRange, formattedText)];
+}
+
+function normalizeLines(lines: string[]): string[] {
+  const out: string[] = [];
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed.length === 0) {
+      out.push(line);
+      continue;
+    }
+
+    if (trimmed === '{' && out.length > 0) {
+      const prev = out[out.length - 1];
+      if (isBlockHeader(prev)) {
+        const joined = prev.replace(/\s*\{\s*$/, '') + '{';
+        out[out.length - 1] = normalizeBraceSpacing(joined);
+        continue;
+      }
+    }
+
+    let normalized = normalizeBraceSpacing(trimmed);
+    let parts = splitElseInline(normalized);
+    if (parts.length === 1) {
+      parts = splitInlineBrace(parts[0]);
+    }
+
+    for (const part of parts) {
+      out.push(part);
+    }
+  }
+
+  return out;
+}
+
+function splitInlineBrace(text: string): string[] {
+  if (isImportLine(text)) {
+    return [text];
+  }
+
+  if (!isBlockHeader(text)) {
+    return [text];
+  }
+
+  const braceIndex = text.indexOf('{');
+  if (braceIndex === -1) {
+    return [text];
+  }
+
+  const before = text.slice(0, braceIndex + 1).trimEnd();
+  const after = text.slice(braceIndex + 1).trim();
+
+  if (after.length === 0) {
+    return [text];
+  }
+
+  if (after.startsWith('}')) {
+    return [text];
+  }
+
+  const parts: string[] = [before, after];
+
+  if (after.endsWith('}')) {
+    const inner = after.slice(0, -1).trim();
+    if (inner.length > 0) {
+      parts[1] = inner;
+      parts.push('}');
+    }
+  }
+
+  return parts;
+}
+
+function isImportLine(text: string): boolean {
+  return /^\s*import\b/.test(text);
+}
+
+function isBlockHeader(text: string): boolean {
+  return /^\s*(if|else|while|fn|export\s+fn)\b/.test(text);
+}
+
+function splitElseInline(text: string): string[] {
+  const match = text.match(/^}(\s*)else(\s*)\{(.*)$/);
+  if (!match) {
+    return [text];
+  }
+
+  const rest = match[3].trim();
+  const parts: string[] = ['}', 'else {'];
+  if (rest.length > 0) {
+    if (rest.endsWith('}')) {
+      const inner = rest.slice(0, -1).trim();
+      if (inner.length > 0) {
+        parts.push(inner);
+      }
+      parts.push('}');
+    } else {
+      parts.push(rest);
+    }
+  }
+
+  return parts;
+}
+
+function normalizeBraceSpacing(text: string): string {
+  if (isImportLine(text)) {
+    return text;
+  }
+
+  let out = text;
+  out = out.replace(/^else\s*\{/, 'else {');
+  out = out.replace(/^if\s*\((.*)\)\s*\{/, 'if ($1) {');
+  out = out.replace(/^while\s*\((.*)\)\s*\{/, 'while ($1) {');
+  out = out.replace(/^(export\s+fn|fn)\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\(([^)]*)\)\s*\{/, '$1 $2($3) {');
+  return out;
 }
 
 function startsWithClosingBrace(text: string): boolean {
@@ -202,5 +314,8 @@ function startsWithClosingBrace(text: string): boolean {
 }
 
 function endsWithOpeningBrace(text: string): boolean {
+  if (isImportLine(text)) {
+    return false;
+  }
   return text.endsWith('{') || text.endsWith('[') || text.endsWith('(');
 }
