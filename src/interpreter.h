@@ -24,6 +24,7 @@ typedef struct {
 } Value;
 
 struct ArrayValue {
+    int ref_count;
     int length;
     int capacity;
     Value *items;
@@ -69,5 +70,7 @@ void value_free(Value v);
 int value_to_int(Value v);
 char* value_to_string(Value v);
 int value_to_bool(Value v);
+
+void interpreter_define_global(Interpreter *interp, const char *name, Value value);
 
 #endif // INTERPRETER_H

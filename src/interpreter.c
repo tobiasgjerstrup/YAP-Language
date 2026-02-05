@@ -57,6 +57,7 @@ static ArrayValue* array_create(int capacity) {
         return NULL;
     }
 
+    arr->ref_count = 1;
     arr->length = 0;
     arr->capacity = capacity;
     arr->items = NULL;
@@ -69,6 +70,30 @@ static ArrayValue* array_create(int capacity) {
     }
 
     return arr;
+}
+
+static void array_retain(ArrayValue *arr) {
+    if (arr) {
+        arr->ref_count += 1;
+    }
+}
+
+static void array_release(ArrayValue *arr) {
+    if (!arr) {
+        return;
+    }
+
+    arr->ref_count -= 1;
+    if (arr->ref_count > 0) {
+        return;
+    }
+
+    for (int i = 0; i < arr->length; i++) {
+        value_free(arr->items[i]);
+    }
+
+    free(arr->items);
+    free(arr);
 }
 
 static int array_ensure_capacity(ArrayValue *arr, int min_capacity) {
@@ -135,12 +160,19 @@ static Value value_copy(Value v) {
     if (v.type == VALUE_STRING && v.data.string_val) {
         return value_create_string(v.data.string_val);
     }
+    if (v.type == VALUE_ARRAY && v.data.array_val) {
+        array_retain(v.data.array_val);
+        return v;
+    }
     return v;
 }
 
 void value_free(Value v) {
     if (v.type == VALUE_STRING && v.data.string_val) {
         free(v.data.string_val);
+    }
+    if (v.type == VALUE_ARRAY && v.data.array_val) {
+        array_release(v.data.array_val);
     }
 }
 
@@ -252,19 +284,34 @@ static Variable* find_variable(Interpreter *interp, const char *name) {
     return NULL;
 }
 
-static void set_variable(Interpreter *interp, const char *name, Value value) {
+static void define_variable(Interpreter *interp, const char *name, Value value) {
+    Variable *var = interp->current_scope->variables;
+    while (var) {
+        if (strcmp(var->name, name) == 0) {
+            value_free(var->value);
+            var->value = value;
+            return;
+        }
+        var = var->next;
+    }
+
+    Variable *new_var = malloc(sizeof(Variable));
+    new_var->name = malloc(strlen(name) + 1);
+    strcpy(new_var->name, name);
+    new_var->value = value;
+    new_var->next = interp->current_scope->variables;
+    interp->current_scope->variables = new_var;
+}
+
+static void assign_variable(Interpreter *interp, const char *name, Value value) {
     Variable *var = find_variable(interp, name);
     if (var) {
         value_free(var->value);
         var->value = value;
-    } else {
-        Variable *new_var = malloc(sizeof(Variable));
-        new_var->name = malloc(strlen(name) + 1);
-        strcpy(new_var->name, name);
-        new_var->value = value;
-        new_var->next = interp->current_scope->variables;
-        interp->current_scope->variables = new_var;
+        return;
     }
+
+    define_variable(interp, name, value);
 }
 
 static Function* find_function(Interpreter *interp, const char *name) {
@@ -546,7 +593,7 @@ static Value eval_call(Interpreter *interp, ASTNode *node) {
     // Bind arguments to parameters
     for (int i = 0; i < func->param_count; i++) {
         Value arg_value = eval_node(interp, node->data.call.args[i]);
-        set_variable(interp, func->params[i], arg_value);
+        define_variable(interp, func->params[i], arg_value);
     }
     
     // Execute function body
@@ -598,7 +645,7 @@ static Value eval_node(Interpreter *interp, ASTNode *node) {
             Value value = node->data.var_decl.value ? 
                          eval_node(interp, node->data.var_decl.value) : 
                          value_create_int(0);
-            set_variable(interp, node->data.var_decl.name, value);
+            define_variable(interp, node->data.var_decl.name, value);
             return value_create_null();
         }
         
@@ -656,7 +703,7 @@ static Value eval_node(Interpreter *interp, ASTNode *node) {
         
         case NODE_ASSIGNMENT: {
             Value value = eval_node(interp, node->data.assignment.value);
-            set_variable(interp, node->data.assignment.name, value);
+            assign_variable(interp, node->data.assignment.name, value);
             return value_copy(value);
         }
         
@@ -689,6 +736,8 @@ static Value eval_node(Interpreter *interp, ASTNode *node) {
             Value result;
             if (var->value.type == VALUE_STRING) {
                 result = value_create_string(var->value.data.string_val);
+            } else if (var->value.type == VALUE_ARRAY) {
+                result = value_copy(var->value);
             } else {
                 result = var->value;
             }
@@ -756,4 +805,11 @@ void interpreter_execute(Interpreter *interp, ASTNode *program) {
 
 Value interpreter_eval(Interpreter *interp, ASTNode *node) {
     return eval_node(interp, node);
+}
+
+void interpreter_define_global(Interpreter *interp, const char *name, Value value) {
+    if (!interp || !name) {
+        return;
+    }
+    define_variable(interp, name, value);
 }

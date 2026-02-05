@@ -432,7 +432,31 @@ void merge_imports(ASTNode *program, ASTNode **imported_functions, int imported_
     program->statement_count = new_count;
 }
 
-void run_file(const char *filename) {
+static Value build_args_value(int arg_count, char **args) {
+    ArrayValue *arr = malloc(sizeof(ArrayValue));
+    if (!arr) {
+        return value_create_null();
+    }
+
+    arr->ref_count = 1;
+    arr->length = arg_count;
+    arr->capacity = arg_count;
+    arr->items = NULL;
+    if (arg_count > 0) {
+        arr->items = malloc(sizeof(Value) * arg_count);
+        if (!arr->items) {
+            free(arr);
+            return value_create_null();
+        }
+        for (int i = 0; i < arg_count; i++) {
+            arr->items[i] = value_create_string(args[i]);
+        }
+    }
+
+    return value_create_array(arr);
+}
+
+void run_file(const char *filename, int arg_count, char **args) {
     char *source = read_file(filename);
     if (!source) return;
     
@@ -462,6 +486,10 @@ void run_file(const char *filename) {
     }
     
     Interpreter *interp = interpreter_create();
+    if (arg_count > 0) {
+        Value args_val = build_args_value(arg_count, args);
+        interpreter_define_global(interp, "args", args_val);
+    }
     interpreter_execute(interp, program);
     
     ast_free(program);
@@ -502,6 +530,7 @@ int main(int argc, char *argv[]) {
     int compile_mode = 0;
     const char *input_path = NULL;
     const char *output_path = NULL;
+    int args_start = -1;
 
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--compile") == 0) {
@@ -516,13 +545,13 @@ int main(int argc, char *argv[]) {
         } else if (!input_path) {
             input_path = argv[i];
         } else {
-            fprintf(stderr, "Usage: %s [--compile] [filename] [-o output]\n", argv[0]);
-            return 1;
+            args_start = i;
+            break;
         }
     }
 
     if (compile_mode) {
-        if (!input_path) {
+        if (!input_path || args_start != -1) {
             fprintf(stderr, "Usage: %s --compile [filename] [-o output]\n", argv[0]);
             return 1;
         }
@@ -571,10 +600,12 @@ int main(int argc, char *argv[]) {
 
     if (argc == 1) {
         run_interactive();
-    } else if (argc == 2 && input_path) {
-        run_file(input_path);
+    } else if (input_path) {
+        int arg_count = args_start == -1 ? 0 : (argc - args_start);
+        char **args = args_start == -1 ? NULL : &argv[args_start];
+        run_file(input_path, arg_count, args);
     } else {
-        fprintf(stderr, "Usage: %s [filename]\n", argv[0]);
+        fprintf(stderr, "Usage: %s [filename] [args...]\n", argv[0]);
         return 1;
     }
     
