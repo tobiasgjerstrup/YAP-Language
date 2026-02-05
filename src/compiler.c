@@ -227,6 +227,66 @@ static void prepass_functions(Codegen *cg, ASTNode *node) {
     }
 }
 
+static void collect_locals(Codegen *cg, ASTNode *node) {
+    if (!node) return;
+
+    switch (node->type) {
+        case NODE_VAR_DECL:
+            add_local(cg, node->data.var_decl.name);
+            if (node->data.var_decl.value) {
+                collect_locals(cg, node->data.var_decl.value);
+            }
+            return;
+        case NODE_BLOCK:
+        case NODE_PROGRAM:
+            for (int i = 0; i < node->statement_count; i++) {
+                collect_locals(cg, node->statements[i]);
+            }
+            return;
+        case NODE_IF_STMT:
+            collect_locals(cg, node->data.if_stmt.condition);
+            collect_locals(cg, node->data.if_stmt.then_branch);
+            collect_locals(cg, node->data.if_stmt.else_branch);
+            return;
+        case NODE_WHILE_STMT:
+            collect_locals(cg, node->data.while_stmt.condition);
+            collect_locals(cg, node->data.while_stmt.body);
+            return;
+        case NODE_RETURN_STMT:
+            collect_locals(cg, node->data.return_stmt.value);
+            return;
+        case NODE_PRINT_STMT:
+            collect_locals(cg, node->data.print_stmt.value);
+            return;
+        case NODE_ASSIGNMENT:
+            collect_locals(cg, node->data.assignment.value);
+            return;
+        case NODE_BINARY_OP:
+            collect_locals(cg, node->data.binary_op.left);
+            collect_locals(cg, node->data.binary_op.right);
+            return;
+        case NODE_UNARY_OP:
+            collect_locals(cg, node->data.unary_op.operand);
+            return;
+        case NODE_CALL:
+            for (int i = 0; i < node->data.call.arg_count; i++) {
+                collect_locals(cg, node->data.call.args[i]);
+            }
+            return;
+        case NODE_ARRAY_LITERAL:
+            for (int i = 0; i < node->data.array_literal.element_count; i++) {
+                collect_locals(cg, node->data.array_literal.elements[i]);
+            }
+            return;
+        case NODE_ARRAY_INDEX:
+            collect_locals(cg, node->data.array_index.array);
+            collect_locals(cg, node->data.array_index.index);
+            return;
+        default:
+            return;
+    }
+}
+
 static void gen_expr(Codegen *cg, ASTNode *node);
 static void gen_stmt(Codegen *cg, ASTNode *node);
 
@@ -1131,6 +1191,8 @@ static int emit_assembly(Codegen *cg, ASTNode *program, const char *asm_path) {
         for (int j = 0; j < func->param_count; j++) {
             add_local(cg, func->params[j]);
         }
+
+        collect_locals(cg, func->body);
 
         emit(cg, ".globl %s\n", func->name);
         emit(cg, ".type %s, @function\n", func->name);

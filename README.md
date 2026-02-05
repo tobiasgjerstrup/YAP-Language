@@ -30,6 +30,21 @@ YAP supports:
 - **Output**: `print()` function for console output
 - **Comments**: `// Single line comments`
 - **String Concatenation**: Using the `+` operator
+- **Imports**: Import exported functions from other YAP files
+
+## Standard Library
+
+YAP includes a small standard library written in YAP itself. For example, Math helpers live in `std/Math.yap`.
+
+Example:
+
+```
+import { abs, pow, gcd } from "std/Math.yap";
+
+print(abs(-10));
+print(pow(2, 8));
+print(gcd(54, 24));
+```
 
 ## Building
 

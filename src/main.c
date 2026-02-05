@@ -302,6 +302,21 @@ void run_file(const char *filename) {
         free(source);
         return;
     }
+
+    // Process imports for interpreter mode
+    ASTNode **imported_functions = NULL;
+    int imported_count = 0;
+    if (process_imports(program, &imported_functions, &imported_count, ".") != 0) {
+        fprintf(stderr, "Import processing failed\n");
+        ast_free(program);
+        parser_destroy(parser);
+        free(source);
+        return;
+    }
+    merge_imports(program, imported_functions, imported_count);
+    if (imported_functions) {
+        free(imported_functions);
+    }
     
     Interpreter *interp = interpreter_create();
     interpreter_execute(interp, program);
