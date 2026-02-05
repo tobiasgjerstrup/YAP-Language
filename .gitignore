@@ -37,6 +37,7 @@ dist/
 # Executables
 *.exe
 *.out
+*out.s
 out
 out.s
 *.app
@@ -49,7 +50,7 @@ out.s
 *.su
 *.idb
 *.pdb
-output.txt
+*output.txt
 examples
 
 # Kernel Module Compile Results

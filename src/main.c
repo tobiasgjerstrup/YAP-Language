@@ -333,7 +333,7 @@ int process_imports(ASTNode *program, ASTNode ***imported_functions, int *import
         if (stmt->type == NODE_IMPORT) {
             // Load and parse the imported module
             char *import_path = stmt->data.import_stmt.module_path;
-            fprintf(stderr, "Importing from: %s\n", import_path);
+            // fprintf(stderr, "Importing from: %s\n", import_path);
             
             char *source = read_file(import_path);
             if (!source) {
