@@ -38,15 +38,15 @@ static void set_location(ASTNode *node, Token token) {
     }
 }
 
-static int match(Parser *parser, TokenType type) {
+static int match(Parser *parser, YapTokenType type) {
     return parser->current_token.type == type;
 }
 
-static int check(Parser *parser, TokenType type) {
+static int check(Parser *parser, YapTokenType type) {
     return parser->current_token.type == type;
 }
 
-static void consume(Parser *parser, TokenType type, const char *msg) {
+static void consume(Parser *parser, YapTokenType type, const char *msg) {
     if (!check(parser, type)) {
         set_error(parser, msg);
     }

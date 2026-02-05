@@ -109,7 +109,7 @@ static char* read_identifier(Lexer *lexer) {
     return result;
 }
 
-static TokenType keyword_type(const char *ident) {
+static YapTokenType keyword_type(const char *ident) {
     if (strcmp(ident, "var") == 0) return TOKEN_VAR;
     if (strcmp(ident, "if") == 0) return TOKEN_IF;
     if (strcmp(ident, "else") == 0) return TOKEN_ELSE;

@@ -98,18 +98,35 @@ static char* join_path(const char *left, const char *right) {
 }
 
 static char* read_file_from_path(const char *path) {
-    FILE *file = fopen(path, "r");
+    FILE *file = fopen(path, "rb");
     if (!file) {
         return NULL;
     }
 
-    fseek(file, 0, SEEK_END);
-    long size = ftell(file);
-    fseek(file, 0, SEEK_SET);
+    if (fseek(file, 0, SEEK_END) != 0) {
+        fclose(file);
+        return NULL;
+    }
 
-    char *buffer = malloc(size + 1);
-    fread(buffer, 1, size, file);
-    buffer[size] = '\0';
+    long size = ftell(file);
+    if (size < 0) {
+        fclose(file);
+        return NULL;
+    }
+
+    if (fseek(file, 0, SEEK_SET) != 0) {
+        fclose(file);
+        return NULL;
+    }
+
+    char *buffer = malloc((size_t)size + 1);
+    if (!buffer) {
+        fclose(file);
+        return NULL;
+    }
+
+    size_t read_bytes = fread(buffer, 1, (size_t)size, file);
+    buffer[read_bytes] = '\0';
 
     fclose(file);
     return buffer;

@@ -1584,6 +1584,12 @@ static int emit_assembly(Codegen *cg, ASTNode *program, const char *asm_path) {
 }
 
 int compiler_compile(ASTNode *program, const char *output_path, char *error, size_t error_size) {
+#ifdef _WIN32
+    if (error && error_size) {
+        snprintf(error, error_size, "Compile mode is not supported on Windows yet. Use interpreter mode instead.");
+    }
+    return 1;
+#endif
     if (!program) {
         if (error && error_size) {
             snprintf(error, error_size, "No program to compile");

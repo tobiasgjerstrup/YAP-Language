@@ -53,10 +53,10 @@ typedef enum {
     // Special
     TOKEN_EOF,
     TOKEN_ERROR
-} TokenType;
+} YapTokenType;
 
 typedef struct {
-    TokenType type;
+    YapTokenType type;
     char *value;
     int line;
     int column;
