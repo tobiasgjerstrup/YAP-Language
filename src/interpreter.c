@@ -4,6 +4,49 @@
 #include <stdio.h>
 #include <time.h>
 
+static char* read_file_contents(const char *path) {
+    FILE *file = fopen(path, "r");
+    if (!file) {
+        return NULL;
+    }
+
+    if (fseek(file, 0, SEEK_END) != 0) {
+        fclose(file);
+        return NULL;
+    }
+
+    long size = ftell(file);
+    if (size < 0) {
+        fclose(file);
+        return NULL;
+    }
+
+    rewind(file);
+
+    char *buffer = malloc((size_t)size + 1);
+    if (!buffer) {
+        fclose(file);
+        return NULL;
+    }
+
+    size_t read_bytes = fread(buffer, 1, (size_t)size, file);
+    buffer[read_bytes] = '\0';
+    fclose(file);
+    return buffer;
+}
+
+static int write_file_contents(const char *path, const char *content, const char *mode) {
+    FILE *file = fopen(path, mode);
+    if (!file) {
+        return -1;
+    }
+
+    size_t len = strlen(content);
+    size_t written = fwrite(content, 1, len, file);
+    fclose(file);
+    return written == len ? 0 : -1;
+}
+
 // Value functions
 Value value_create_int(int val) {
     Value v;
@@ -305,6 +348,61 @@ static Value eval_call(Interpreter *interp, ASTNode *node) {
             rand_seeded = 1;
         }
         return value_create_int(rand());
+    }
+
+    if (strcmp(node->data.call.name, "read") == 0) {
+        if (node->data.call.arg_count != 1) {
+            fprintf(stderr, "Runtime Error: Line %d:%d: read() expects 1 argument: filename\n",
+                    node->line, node->column);
+            return value_create_null();
+        }
+
+        Value path_val = eval_node(interp, node->data.call.args[0]);
+        const char *path = value_to_string(path_val);
+        char *contents = read_file_contents(path);
+        value_free(path_val);
+
+        if (!contents) {
+            return value_create_null();
+        }
+
+        Value result = value_create_string(contents);
+        free(contents);
+        return result;
+    }
+
+    if (strcmp(node->data.call.name, "write") == 0) {
+        if (node->data.call.arg_count != 2) {
+            fprintf(stderr, "Runtime Error: Line %d:%d: write() expects 2 arguments: filename, content\n",
+                    node->line, node->column);
+            return value_create_null();
+        }
+
+        Value path_val = eval_node(interp, node->data.call.args[0]);
+        Value content_val = eval_node(interp, node->data.call.args[1]);
+        const char *path = value_to_string(path_val);
+        const char *content = value_to_string(content_val);
+        int rc = write_file_contents(path, content, "w");
+        value_free(path_val);
+        value_free(content_val);
+        return value_create_int(rc);
+    }
+
+    if (strcmp(node->data.call.name, "append") == 0) {
+        if (node->data.call.arg_count != 2) {
+            fprintf(stderr, "Runtime Error: Line %d:%d: append() expects 2 arguments: filename, content\n",
+                    node->line, node->column);
+            return value_create_null();
+        }
+
+        Value path_val = eval_node(interp, node->data.call.args[0]);
+        Value content_val = eval_node(interp, node->data.call.args[1]);
+        const char *path = value_to_string(path_val);
+        const char *content = value_to_string(content_val);
+        int rc = write_file_contents(path, content, "a");
+        value_free(path_val);
+        value_free(content_val);
+        return value_create_int(rc);
     }
 
     Function *func = find_function(interp, node->data.call.name);
