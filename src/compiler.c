@@ -22,6 +22,7 @@ typedef struct {
     ASTNode *body;
     char **params;
     int param_count;
+    VarType *param_types;
 } FunctionDef;
 
 typedef struct {
@@ -123,6 +124,14 @@ static FunctionDef* find_function(Codegen *cg, const char *name) {
     return NULL;
 }
 
+static VarType merge_types(VarType existing, VarType incoming) {
+    if (existing == incoming) return existing;
+    if (incoming == TYPE_STRING || existing == TYPE_STRING) return TYPE_STRING;
+    if (incoming == TYPE_ARRAY || existing == TYPE_ARRAY) return TYPE_ARRAY;
+    if (incoming == TYPE_BOOL || existing == TYPE_BOOL) return TYPE_BOOL;
+    return existing;
+}
+
 static int find_string(Codegen *cg, const char *value) {
     for (int i = 0; i < cg->string_count; i++) {
         if (strcmp(cg->strings[i].value, value) == 0) {
@@ -213,17 +222,164 @@ static void prepass_functions(Codegen *cg, ASTNode *node) {
             strcpy(cg->functions[cg->function_count].name, node->data.func_decl.name);
             cg->functions[cg->function_count].body = node->data.func_decl.body;
             cg->functions[cg->function_count].param_count = node->data.func_decl.param_count;
+            cg->functions[cg->function_count].param_types = NULL;
             if (node->data.func_decl.param_count > 0) {
                 cg->functions[cg->function_count].params = malloc(sizeof(char*) * node->data.func_decl.param_count);
+                cg->functions[cg->function_count].param_types = malloc(sizeof(VarType) * node->data.func_decl.param_count);
                 for (int i = 0; i < node->data.func_decl.param_count; i++) {
                     cg->functions[cg->function_count].params[i] = malloc(strlen(node->data.func_decl.params[i]) + 1);
                     strcpy(cg->functions[cg->function_count].params[i], node->data.func_decl.params[i]);
+                    cg->functions[cg->function_count].param_types[i] = TYPE_INT;
                 }
             }
             cg->function_count++;
             break;
         default:
             break;
+    }
+}
+
+static VarType infer_expr_type(Codegen *cg, ASTNode *node, FunctionDef *current_func) {
+    if (!node) return TYPE_INT;
+    switch (node->type) {
+        case NODE_STRING_LITERAL:
+            return TYPE_STRING;
+        case NODE_BOOL_LITERAL:
+            return TYPE_BOOL;
+        case NODE_ARRAY_LITERAL:
+            return TYPE_ARRAY;
+        case NODE_INT_LITERAL:
+            return TYPE_INT;
+        case NODE_ARRAY_INDEX:
+            if (node->data.array_index.array && node->data.array_index.array->type == NODE_IDENTIFIER) {
+                if (strcmp(node->data.array_index.array->data.identifier.name, "args") == 0) {
+                    return TYPE_STRING;
+                }
+            }
+            return TYPE_INT;
+        case NODE_IDENTIFIER:
+            if (current_func && current_func->param_types) {
+                for (int i = 0; i < current_func->param_count; i++) {
+                    if (strcmp(current_func->params[i], node->data.identifier.name) == 0) {
+                        return current_func->param_types[i];
+                    }
+                }
+            }
+            return TYPE_INT;
+        case NODE_UNARY_OP:
+            if (strcmp(node->data.unary_op.op, "!") == 0) return TYPE_BOOL;
+            return TYPE_INT;
+        case NODE_BINARY_OP: {
+            const char *op = node->data.binary_op.op;
+            if (strcmp(op, "<") == 0 || strcmp(op, "<=") == 0 ||
+                strcmp(op, ">") == 0 || strcmp(op, ">=") == 0 ||
+                strcmp(op, "==") == 0 || strcmp(op, "!=") == 0 ||
+                strcmp(op, "&&") == 0 || strcmp(op, "||") == 0) {
+                return TYPE_BOOL;
+            }
+            if (strcmp(op, "+") == 0) {
+                VarType left = infer_expr_type(cg, node->data.binary_op.left, current_func);
+                VarType right = infer_expr_type(cg, node->data.binary_op.right, current_func);
+                if (left == TYPE_STRING || right == TYPE_STRING) return TYPE_STRING;
+            }
+            return TYPE_INT;
+        }
+        case NODE_CALL:
+            if (strcmp(node->data.call.name, "read") == 0) return TYPE_STRING;
+            return TYPE_INT;
+        default:
+            return TYPE_INT;
+    }
+}
+
+static void infer_param_types(Codegen *cg, ASTNode *node, FunctionDef *current_func, int *changed) {
+    if (!node) return;
+    switch (node->type) {
+        case NODE_PROGRAM:
+        case NODE_BLOCK:
+            for (int i = 0; i < node->statement_count; i++) {
+                infer_param_types(cg, node->statements[i], current_func, changed);
+            }
+            return;
+        case NODE_FUNC_DECL: {
+            FunctionDef *func = find_function(cg, node->data.func_decl.name);
+            if (func) {
+                infer_param_types(cg, node->data.func_decl.body, func, changed);
+            }
+            return;
+        }
+        case NODE_CALL: {
+            FunctionDef *callee = find_function(cg, node->data.call.name);
+            if (callee && callee->param_types) {
+                if (strcmp(node->data.call.name, "assert_eq_str") == 0) {
+                    if (callee->param_count > 0) callee->param_types[0] = TYPE_STRING;
+                    if (callee->param_count > 1) callee->param_types[1] = TYPE_STRING;
+                    if (callee->param_count > 2) callee->param_types[2] = TYPE_STRING;
+                } else if (strcmp(node->data.call.name, "assert_eq_int") == 0) {
+                    if (callee->param_count > 0) callee->param_types[0] = TYPE_INT;
+                    if (callee->param_count > 1) callee->param_types[1] = TYPE_INT;
+                    if (callee->param_count > 2) callee->param_types[2] = TYPE_STRING;
+                } else if (strcmp(node->data.call.name, "assert_true") == 0) {
+                    if (callee->param_count > 0) callee->param_types[0] = TYPE_BOOL;
+                    if (callee->param_count > 1) callee->param_types[1] = TYPE_STRING;
+                } else if (strcmp(node->data.call.name, "check") == 0) {
+                    if (callee->param_count > 0) callee->param_types[0] = TYPE_BOOL;
+                    if (callee->param_count > 1) callee->param_types[1] = TYPE_STRING;
+                }
+
+                for (int i = 0; i < node->data.call.arg_count && i < callee->param_count; i++) {
+                    VarType arg_type = infer_expr_type(cg, node->data.call.args[i], current_func);
+                    VarType merged = merge_types(callee->param_types[i], arg_type);
+                    if (merged != callee->param_types[i]) {
+                        callee->param_types[i] = merged;
+                        if (changed) *changed = 1;
+                    }
+                }
+            }
+            for (int i = 0; i < node->data.call.arg_count; i++) {
+                infer_param_types(cg, node->data.call.args[i], current_func, changed);
+            }
+            return;
+        }
+        case NODE_VAR_DECL:
+            infer_param_types(cg, node->data.var_decl.value, current_func, changed);
+            return;
+        case NODE_ASSIGNMENT:
+            infer_param_types(cg, node->data.assignment.value, current_func, changed);
+            return;
+        case NODE_PRINT_STMT:
+            infer_param_types(cg, node->data.print_stmt.value, current_func, changed);
+            return;
+        case NODE_IF_STMT:
+            infer_param_types(cg, node->data.if_stmt.condition, current_func, changed);
+            infer_param_types(cg, node->data.if_stmt.then_branch, current_func, changed);
+            infer_param_types(cg, node->data.if_stmt.else_branch, current_func, changed);
+            return;
+        case NODE_WHILE_STMT:
+            infer_param_types(cg, node->data.while_stmt.condition, current_func, changed);
+            infer_param_types(cg, node->data.while_stmt.body, current_func, changed);
+            return;
+        case NODE_RETURN_STMT:
+            infer_param_types(cg, node->data.return_stmt.value, current_func, changed);
+            return;
+        case NODE_BINARY_OP:
+            infer_param_types(cg, node->data.binary_op.left, current_func, changed);
+            infer_param_types(cg, node->data.binary_op.right, current_func, changed);
+            return;
+        case NODE_UNARY_OP:
+            infer_param_types(cg, node->data.unary_op.operand, current_func, changed);
+            return;
+        case NODE_ARRAY_LITERAL:
+            for (int i = 0; i < node->data.array_literal.element_count; i++) {
+                infer_param_types(cg, node->data.array_literal.elements[i], current_func, changed);
+            }
+            return;
+        case NODE_ARRAY_INDEX:
+            infer_param_types(cg, node->data.array_index.array, current_func, changed);
+            infer_param_types(cg, node->data.array_index.index, current_func, changed);
+            return;
+        default:
+            return;
     }
 }
 
@@ -338,6 +494,8 @@ static VarType expr_is_string(Codegen *cg, ASTNode *node) {
 
 static void gen_binary_op(Codegen *cg, ASTNode *node) {
     const char *op = node->data.binary_op.op;
+    VarType left_type = expr_is_string(cg, node->data.binary_op.left);
+    VarType right_type = expr_is_string(cg, node->data.binary_op.right);
     
     // Handle short-circuit && and ||
     if (strcmp(op, "&&") == 0) {
@@ -389,10 +547,29 @@ static void gen_binary_op(Codegen *cg, ASTNode *node) {
     emit(cg, "    pop rcx\n");
 
     if (strcmp(op, "+") == 0) {
-        VarType left_type = expr_is_string(cg, node->data.binary_op.left);
-        VarType right_type = expr_is_string(cg, node->data.binary_op.right);
-        
         if (left_type == TYPE_STRING || right_type == TYPE_STRING) {
+            // String concatenation: ensure both sides are strings
+            if (left_type != TYPE_STRING) {
+                emit(cg, "    mov rdi, rcx\n");
+                if (left_type == TYPE_BOOL) {
+                    emit(cg, "    call yap_bool_to_string\n");
+                } else {
+                    emit(cg, "    call yap_int_to_string\n");
+                }
+                emit(cg, "    mov rcx, rax\n");
+            }
+
+            if (right_type != TYPE_STRING) {
+                emit(cg, "    push rcx\n");
+                emit(cg, "    mov rdi, rax\n");
+                if (right_type == TYPE_BOOL) {
+                    emit(cg, "    call yap_bool_to_string\n");
+                } else {
+                    emit(cg, "    call yap_int_to_string\n");
+                }
+                emit(cg, "    pop rcx\n");
+            }
+
             // String concatenation: call yap_concat_strings(rcx, rax)
             // rax = right_val, rcx = left_val
             emit(cg, "    mov rdi, rcx\n");        // arg1 = left
@@ -432,6 +609,22 @@ static void gen_binary_op(Codegen *cg, ASTNode *node) {
     if (strcmp(op, "<") == 0 || strcmp(op, "<=") == 0 ||
         strcmp(op, ">") == 0 || strcmp(op, ">=") == 0 ||
         strcmp(op, "==") == 0 || strcmp(op, "!=") == 0) {
+        if ((strcmp(op, "==") == 0 || strcmp(op, "!=") == 0) &&
+            left_type == TYPE_STRING && right_type == TYPE_STRING) {
+            emit(cg, "    mov rdi, rcx\n");
+            emit(cg, "    mov rsi, rax\n");
+            emit(cg, "    xor eax, eax\n");
+            emit(cg, "    call strcmp@PLT\n");
+            emit(cg, "    cmp rax, 0\n");
+            if (strcmp(op, "==") == 0) {
+                emit(cg, "    sete al\n");
+            } else {
+                emit(cg, "    setne al\n");
+            }
+            emit(cg, "    movzx rax, al\n");
+            return;
+        }
+
         emit(cg, "    cmp rcx, rax\n");
         if (strcmp(op, "<") == 0) {
             emit(cg, "    setl al\n");
@@ -795,6 +988,12 @@ static void emit_string_section(Codegen *cg) {
     emit(cg, ".section .rodata\n");
     emit(cg, ".LC0:\n");
     emit(cg, "    .string \"%%ld\\n\"\n");
+    emit(cg, ".LC_INT_FORMAT:\n");
+    emit(cg, "    .string \"%%ld\"\n");
+    emit(cg, ".LC_TRUE:\n");
+    emit(cg, "    .string \"true\"\n");
+    emit(cg, ".LC_FALSE:\n");
+    emit(cg, "    .string \"false\"\n");
     
     // File mode strings for I/O
     emit(cg, ".filemode_r:\n");
@@ -835,6 +1034,47 @@ static void emit_runtime_helpers(Codegen *cg) {
     emit(cg, "    xor edi, edi\n");
     emit(cg, "    call time@PLT\n");
     emit(cg, "    add rsp, 8\n");
+    emit(cg, "    pop rbp\n");
+    emit(cg, "    ret\n");
+
+    // yap_int_to_string(rdi=value) -> rax=malloc'd string
+    emit(cg, "\n.globl yap_int_to_string\n");
+    emit(cg, ".type yap_int_to_string, @function\n");
+    emit(cg, "yap_int_to_string:\n");
+    emit(cg, "    push rbp\n");
+    emit(cg, "    mov rbp, rsp\n");
+    emit(cg, "    push rbx\n");
+    emit(cg, "    push r12\n");
+
+    emit(cg, "    mov rbx, rdi\n");         // save value
+    emit(cg, "    mov rdi, 32\n");          // buffer size
+    emit(cg, "    call malloc@PLT\n");
+    emit(cg, "    mov r12, rax\n");         // buffer pointer
+    emit(cg, "    mov rdi, r12\n");         // dest
+    emit(cg, "    lea rsi, [rip + .LC_INT_FORMAT]\n");
+    emit(cg, "    mov rdx, rbx\n");         // value
+    emit(cg, "    xor eax, eax\n");
+    emit(cg, "    call sprintf@PLT\n");
+    emit(cg, "    mov rax, r12\n");
+
+    emit(cg, "    pop r12\n");
+    emit(cg, "    pop rbx\n");
+    emit(cg, "    pop rbp\n");
+    emit(cg, "    ret\n");
+
+    // yap_bool_to_string(rdi=value) -> rax=pointer to static string
+    emit(cg, "\n.globl yap_bool_to_string\n");
+    emit(cg, ".type yap_bool_to_string, @function\n");
+    emit(cg, "yap_bool_to_string:\n");
+    emit(cg, "    push rbp\n");
+    emit(cg, "    mov rbp, rsp\n");
+    emit(cg, "    cmp rdi, 0\n");
+    emit(cg, "    jne .bool_true\n");
+    emit(cg, "    lea rax, [rip + .LC_FALSE]\n");
+    emit(cg, "    pop rbp\n");
+    emit(cg, "    ret\n");
+    emit(cg, ".bool_true:\n");
+    emit(cg, "    lea rax, [rip + .LC_TRUE]\n");
     emit(cg, "    pop rbp\n");
     emit(cg, "    ret\n");
 
@@ -1250,6 +1490,12 @@ static int emit_assembly(Codegen *cg, ASTNode *program, const char *asm_path) {
             add_local(cg, func->params[j]);
         }
 
+        if (func->param_types) {
+            for (int j = 0; j < func->param_count; j++) {
+                set_local_type(cg, func->params[j], func->param_types[j]);
+            }
+        }
+
         collect_locals(cg, func->body);
 
         emit(cg, ".globl %s\n", func->name);
@@ -1368,6 +1614,12 @@ int compiler_compile(ASTNode *program, const char *output_path, char *error, siz
         }
         return 1;
     }
+
+    int changed = 0;
+    do {
+        changed = 0;
+        infer_param_types(&cg, program, NULL, &changed);
+    } while (changed);
 
     if (emit_assembly(&cg, program, asm_path) != 0) {
         if (error && error_size) {
