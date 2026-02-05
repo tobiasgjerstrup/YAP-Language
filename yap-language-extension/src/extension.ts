@@ -26,6 +26,8 @@ export function activate(context: vscode.ExtensionContext) {
         completions.push(createCompletion('append', 'append("${1:path}", ${2:content});', vscode.CompletionItemKind.Function, 'Append file contents'));
         completions.push(createCompletion('push', 'push(${1:array}, ${2:value})', vscode.CompletionItemKind.Function, 'Push value to array'));
         completions.push(createCompletion('pop', 'pop(${1:array})', vscode.CompletionItemKind.Function, 'Pop value from array'));
+        completions.push(createCompletion('random', 'random()', vscode.CompletionItemKind.Function, 'Random integer'));
+        completions.push(createCompletion('timestamp', 'timestamp()', vscode.CompletionItemKind.Function, 'Unix timestamp (seconds)'));
 
         // Standard library (std/Math) with auto-import
         const mathFunctions: Array<{ name: string; snippet: string; doc: string }> = [

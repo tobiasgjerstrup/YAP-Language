@@ -21,7 +21,7 @@
     },
     {
       "name": "support.function",
-      "match": "\\b(print|read|write|append|push|pop)\\b"
+      "match": "\\b(print|read|write|append|push|pop|random|timestamp)\\b"
     },
     {
       "name": "string.quoted.double",
