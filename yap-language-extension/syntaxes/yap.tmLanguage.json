@@ -16,6 +16,15 @@
       "match": "\\b(var|fn)\\b"
     },
     {
+      "name": "meta.function.declaration",
+      "match": "\\b(?:fn|export\\s+fn)\\s+([a-zA-Z_][a-zA-Z0-9_]*)",
+      "captures": {
+        "1": {
+          "name": "entity.name.function"
+        }
+      }
+    },
+    {
       "name": "constant.language",
       "match": "\\b(true|false)\\b"
     },
@@ -37,6 +46,10 @@
     {
       "name": "constant.numeric",
       "match": "\\b\\d+\\b"
+    },
+    {
+      "name": "entity.name.function.call",
+      "match": "\\b(?!if\\b|else\\b|while\\b|return\\b|var\\b|fn\\b|export\\b|import\\b|from\\b)([a-zA-Z_][a-zA-Z0-9_]*)\\s*(?=\\()"
     },
     {
       "name": "variable.other.readwrite",
