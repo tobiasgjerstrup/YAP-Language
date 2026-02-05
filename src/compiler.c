@@ -538,6 +538,15 @@ static void gen_expr(Codegen *cg, ASTNode *node) {
             set_error(cg, node, "Unsupported unary operator '%s'", node->data.unary_op.op);
             return;
         case NODE_CALL: {
+            if (strcmp(node->data.call.name, "timestamp") == 0) {
+                if (node->data.call.arg_count != 0) {
+                    set_error(cg, node, "timestamp() expects 0 arguments");
+                    return;
+                }
+                emit(cg, "    xor eax, eax\n");
+                emit(cg, "    call yap_timestamp\n");
+                return;
+            }
             if (strcmp(node->data.call.name, "random") == 0) {
                 if (node->data.call.arg_count != 0) {
                     set_error(cg, node, "random() expects 0 arguments");
@@ -815,6 +824,19 @@ static void emit_runtime_helpers(Codegen *cg) {
     emit(cg, "yap_rand_seeded:\n");
     emit(cg, "    .long 0\n");
     emit(cg, ".text\n");
+
+    // yap_timestamp() -> rax=unix timestamp (seconds)
+    emit(cg, "\n.globl yap_timestamp\n");
+    emit(cg, ".type yap_timestamp, @function\n");
+    emit(cg, "yap_timestamp:\n");
+    emit(cg, "    push rbp\n");
+    emit(cg, "    mov rbp, rsp\n");
+    emit(cg, "    sub rsp, 8\n");
+    emit(cg, "    xor edi, edi\n");
+    emit(cg, "    call time@PLT\n");
+    emit(cg, "    add rsp, 8\n");
+    emit(cg, "    pop rbp\n");
+    emit(cg, "    ret\n");
 
     // yap_random() -> rax=random int (auto-seeded once)
     emit(cg, "\n.globl yap_random\n");

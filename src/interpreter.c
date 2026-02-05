@@ -284,6 +284,15 @@ static Value eval_unary_op(Interpreter *interp, ASTNode *node) {
 }
 
 static Value eval_call(Interpreter *interp, ASTNode *node) {
+    if (strcmp(node->data.call.name, "timestamp") == 0) {
+        if (node->data.call.arg_count != 0) {
+            fprintf(stderr, "Runtime Error: Line %d:%d: timestamp() expects 0 arguments\n",
+                    node->line, node->column);
+            return value_create_null();
+        }
+        return value_create_int((int)time(NULL));
+    }
+
     if (strcmp(node->data.call.name, "random") == 0) {
         if (node->data.call.arg_count != 0) {
             fprintf(stderr, "Runtime Error: Line %d:%d: random() expects 0 arguments\n",
