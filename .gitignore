@@ -49,6 +49,7 @@ out.s
 *.idb
 *.pdb
 output.txt
+examples
 
 # Kernel Module Compile Results
 *.mod*

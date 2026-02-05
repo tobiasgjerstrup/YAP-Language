@@ -61,7 +61,13 @@ export function activate(context: vscode.ExtensionContext) {
     'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_"'
   );
 
-  context.subscriptions.push(provider);
+  const formatter = vscode.languages.registerDocumentFormattingEditProvider('yap', {
+    provideDocumentFormattingEdits(document) {
+      return formatDocument(document, 4);
+    }
+  });
+
+  context.subscriptions.push(provider, formatter);
 }
 
 function createCompletion(
@@ -141,4 +147,50 @@ function buildAutoImportEdits(
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function formatDocument(document: vscode.TextDocument, indentSize: number): vscode.TextEdit[] {
+  const text = document.getText();
+  const lines = text.split(/\r?\n/);
+  const edits: vscode.TextEdit[] = [];
+
+  let indentLevel = 0;
+  for (let i = 0; i < lines.length; i++) {
+    let line = lines[i];
+    const trimmed = line.trim();
+
+    if (trimmed.length === 0) {
+      if (line.length > 0) {
+        const range = new vscode.Range(new vscode.Position(i, 0), new vscode.Position(i, line.length));
+        edits.push(vscode.TextEdit.replace(range, ''));
+      }
+      continue;
+    }
+
+    if (startsWithClosingBrace(trimmed)) {
+      indentLevel = Math.max(0, indentLevel - 1);
+    }
+
+    const desiredIndent = ' '.repeat(indentLevel * indentSize);
+    const newLine = desiredIndent + trimmed;
+
+    if (newLine !== line) {
+      const range = new vscode.Range(new vscode.Position(i, 0), new vscode.Position(i, line.length));
+      edits.push(vscode.TextEdit.replace(range, newLine));
+    }
+
+    if (endsWithOpeningBrace(trimmed)) {
+      indentLevel += 1;
+    }
+  }
+
+  return edits;
+}
+
+function startsWithClosingBrace(text: string): boolean {
+  return text.startsWith('}') || text.startsWith(']') || text.startsWith(')');
+}
+
+function endsWithOpeningBrace(text: string): boolean {
+  return text.endsWith('{') || text.endsWith('[') || text.endsWith('(');
 }
