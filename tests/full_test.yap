@@ -246,3 +246,22 @@ fail = fail + (1 - ok);
 
 print("Passed: " + pass);
 print("Failed: " + fail);
+
+var longLoopStart = timestamp();
+var longLoop = 2147483647;
+if (args[2] == "interpreted") {
+    longLoop = longLoop/50; // Shorten loop for interpret mode to avoid long test times
+}
+print(longLoop);
+while (longLoop > 0) {
+    longLoop = longLoop - 1;
+    if (longLoop % 100000000 == 0 || args[2] == "interpreted" && longLoop % 2000000 == 0) {
+        print(longLoop);
+    }
+}
+var longLoopEnd = timestamp();
+var longLoopTime = longLoopEnd - longLoopStart;
+if (args[2] == "interpreted") {
+    longLoopTime = longLoopTime * 50; // Scale time back up for interpret mode
+}
+print("Long loop time (seconds): " + longLoopTime + " in " + args[2] + " mode");
