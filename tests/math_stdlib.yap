@@ -1,4 +1,4 @@
-import { abs, sign, max, min, clamp, is_even, is_odd, pow, gcd, lcm, factorial, int_sqrt } from "std/Math.yap";
+import { abs, sign, max, min, clamp, is_even, is_odd, pow, gcd, lcm, factorial, int_sqrt } from "std/Math";
 
 print(abs(-5));         // 5
 print(sign(-7));        // -1

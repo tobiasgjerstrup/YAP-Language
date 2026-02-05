@@ -1,28 +1,171 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <limits.h>
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <unistd.h>
+#endif
 #include "lexer.h"
 #include "parser.h"
 #include "interpreter.h"
 #include "compiler.h"
 
-char* read_file(const char *filename) {
-    FILE *file = fopen(filename, "r");
+static int has_yap_extension(const char *path) {
+    size_t len = strlen(path);
+    if (len < 4) return 0;
+    return strcmp(path + len - 4, ".yap") == 0;
+}
+
+static int is_stdlib_import(const char *path, const char **module_out) {
+    if (!path) return 0;
+
+    if (strncmp(path, "std/", 4) == 0) {
+        *module_out = path + 4;
+        return 1;
+    }
+    if (strncmp(path, "std\\", 4) == 0) {
+        *module_out = path + 4;
+        return 1;
+    }
+    if (strncmp(path, "/std/", 5) == 0) {
+        *module_out = path + 5;
+        return 1;
+    }
+    if (strncmp(path, "/std\\", 5) == 0) {
+        *module_out = path + 5;
+        return 1;
+    }
+    return 0;
+}
+
+static char* get_executable_dir() {
+    char buffer[4096];
+    buffer[0] = '\0';
+
+#ifdef _WIN32
+    DWORD len = GetModuleFileNameA(NULL, buffer, sizeof(buffer));
+    if (len == 0 || len >= sizeof(buffer)) return NULL;
+#else
+    ssize_t len = readlink("/proc/self/exe", buffer, sizeof(buffer) - 1);
+    if (len <= 0 || len >= (ssize_t)sizeof(buffer)) return NULL;
+    buffer[len] = '\0';
+#endif
+
+    for (int i = (int)strlen(buffer) - 1; i >= 0; i--) {
+        if (buffer[i] == '/' || buffer[i] == '\\') {
+            buffer[i] = '\0';
+            break;
+        }
+    }
+
+    size_t out_len = strlen(buffer);
+    char *out = malloc(out_len + 1);
+    if (!out) return NULL;
+    memcpy(out, buffer, out_len + 1);
+    return out;
+}
+
+static char* join_path(const char *left, const char *right) {
+    if (!left || !right) return NULL;
+    char sep = '/';
+    if (strchr(left, '\\')) sep = '\\';
+
+    size_t left_len = strlen(left);
+    size_t right_len = strlen(right);
+    int need_sep = left_len > 0 && left[left_len - 1] != '/' && left[left_len - 1] != '\\';
+
+    size_t total = left_len + right_len + (need_sep ? 1 : 0);
+    char *out = malloc(total + 1);
+    if (!out) return NULL;
+
+    memcpy(out, left, left_len);
+    if (need_sep) {
+        out[left_len] = sep;
+        memcpy(out + left_len + 1, right, right_len);
+        out[total] = '\0';
+    } else {
+        memcpy(out + left_len, right, right_len);
+        out[total] = '\0';
+    }
+
+    return out;
+}
+
+static char* read_file_from_path(const char *path) {
+    FILE *file = fopen(path, "r");
     if (!file) {
-        fprintf(stderr, "Error: Could not open file '%s'\n", filename);
         return NULL;
     }
-    
+
     fseek(file, 0, SEEK_END);
     long size = ftell(file);
     fseek(file, 0, SEEK_SET);
-    
+
     char *buffer = malloc(size + 1);
     fread(buffer, 1, size, file);
     buffer[size] = '\0';
-    
+
     fclose(file);
     return buffer;
+}
+
+char* read_file(const char *filename) {
+    const char *module = NULL;
+    if (is_stdlib_import(filename, &module)) {
+        char module_with_ext[512];
+        if (has_yap_extension(module)) {
+            snprintf(module_with_ext, sizeof(module_with_ext), "%s", module);
+        } else {
+            snprintf(module_with_ext, sizeof(module_with_ext), "%s.yap", module);
+        }
+
+        const char *env_root = getenv("YAP_STD_PATH");
+        if (env_root && env_root[0] != '\0') {
+            char *env_path = join_path(env_root, module_with_ext);
+            if (env_path) {
+                char *data = read_file_from_path(env_path);
+                free(env_path);
+                if (data) return data;
+            }
+        }
+
+        char *exe_dir = get_executable_dir();
+        if (exe_dir) {
+            char *std_dir = join_path(exe_dir, "std");
+            if (std_dir) {
+                char *std_path = join_path(std_dir, module_with_ext);
+                free(std_dir);
+                if (std_path) {
+                    char *data = read_file_from_path(std_path);
+                    free(std_path);
+                    if (data) {
+                        free(exe_dir);
+                        return data;
+                    }
+                }
+            }
+            free(exe_dir);
+        }
+
+        char *cwd_std = join_path("./std", module_with_ext);
+        if (cwd_std) {
+            char *data = read_file_from_path(cwd_std);
+            free(cwd_std);
+            if (data) return data;
+        }
+
+        fprintf(stderr, "Error: Could not open stdlib module '%s' (set YAP_STD_PATH or place std/ next to the executable)\n", filename);
+        return NULL;
+    }
+
+    char *data = read_file_from_path(filename);
+    if (!data) {
+        fprintf(stderr, "Error: Could not open file '%s'\n", filename);
+        return NULL;
+    }
+    return data;
 }
 
 // Resolve relative import paths (for now, just join paths)

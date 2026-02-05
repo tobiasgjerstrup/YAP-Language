@@ -34,12 +34,12 @@ YAP supports:
 
 ## Standard Library
 
-YAP includes a small standard library written in YAP itself. For example, Math helpers live in `std/Math.yap`.
+YAP includes a small standard library written in YAP itself. For example, Math helpers live in `std/Math`.
 
 Example:
 
 ```
-import { abs, pow, gcd } from "std/Math.yap";
+import { abs, pow, gcd } from "std/Math";
 
 print(abs(-10));
 print(pow(2, 8));
