@@ -6,6 +6,7 @@ export function activate(context: vscode.ExtensionContext) {
     {
       provideCompletionItems(document, position, token, context) {
         const completions: vscode.CompletionItem[] = [];
+        const mathModule = 'std/Math';
 
         // Keywords
         completions.push(createCompletion('var', 'var ${1:name} = ${2:value};', vscode.CompletionItemKind.Keyword, 'Variable declaration'));
@@ -26,19 +27,25 @@ export function activate(context: vscode.ExtensionContext) {
         completions.push(createCompletion('push', 'push(${1:array}, ${2:value})', vscode.CompletionItemKind.Function, 'Push value to array'));
         completions.push(createCompletion('pop', 'pop(${1:array})', vscode.CompletionItemKind.Function, 'Pop value from array'));
 
-        // Standard library (std/Math)
-        completions.push(createCompletion('abs', 'abs(${1:x})', vscode.CompletionItemKind.Function, 'Math.abs (std/Math)'));
-        completions.push(createCompletion('sign', 'sign(${1:x})', vscode.CompletionItemKind.Function, 'Math.sign (std/Math)'));
-        completions.push(createCompletion('max', 'max(${1:a}, ${2:b})', vscode.CompletionItemKind.Function, 'Math.max (std/Math)'));
-        completions.push(createCompletion('min', 'min(${1:a}, ${2:b})', vscode.CompletionItemKind.Function, 'Math.min (std/Math)'));
-        completions.push(createCompletion('clamp', 'clamp(${1:x}, ${2:lo}, ${3:hi})', vscode.CompletionItemKind.Function, 'Math.clamp (std/Math)'));
-        completions.push(createCompletion('is_even', 'is_even(${1:x})', vscode.CompletionItemKind.Function, 'Math.is_even (std/Math)'));
-        completions.push(createCompletion('is_odd', 'is_odd(${1:x})', vscode.CompletionItemKind.Function, 'Math.is_odd (std/Math)'));
-        completions.push(createCompletion('pow', 'pow(${1:base}, ${2:exp})', vscode.CompletionItemKind.Function, 'Math.pow (std/Math)'));
-        completions.push(createCompletion('gcd', 'gcd(${1:a}, ${2:b})', vscode.CompletionItemKind.Function, 'Math.gcd (std/Math)'));
-        completions.push(createCompletion('lcm', 'lcm(${1:a}, ${2:b})', vscode.CompletionItemKind.Function, 'Math.lcm (std/Math)'));
-        completions.push(createCompletion('factorial', 'factorial(${1:n})', vscode.CompletionItemKind.Function, 'Math.factorial (std/Math)'));
-        completions.push(createCompletion('int_sqrt', 'int_sqrt(${1:n})', vscode.CompletionItemKind.Function, 'Math.int_sqrt (std/Math)'));
+        // Standard library (std/Math) with auto-import
+        const mathFunctions: Array<{ name: string; snippet: string; doc: string }> = [
+          { name: 'abs', snippet: 'abs(${1:x})', doc: 'Math.abs (std/Math)' },
+          { name: 'sign', snippet: 'sign(${1:x})', doc: 'Math.sign (std/Math)' },
+          { name: 'max', snippet: 'max(${1:a}, ${2:b})', doc: 'Math.max (std/Math)' },
+          { name: 'min', snippet: 'min(${1:a}, ${2:b})', doc: 'Math.min (std/Math)' },
+          { name: 'clamp', snippet: 'clamp(${1:x}, ${2:lo}, ${3:hi})', doc: 'Math.clamp (std/Math)' },
+          { name: 'is_even', snippet: 'is_even(${1:x})', doc: 'Math.is_even (std/Math)' },
+          { name: 'is_odd', snippet: 'is_odd(${1:x})', doc: 'Math.is_odd (std/Math)' },
+          { name: 'pow', snippet: 'pow(${1:base}, ${2:exp})', doc: 'Math.pow (std/Math)' },
+          { name: 'gcd', snippet: 'gcd(${1:a}, ${2:b})', doc: 'Math.gcd (std/Math)' },
+          { name: 'lcm', snippet: 'lcm(${1:a}, ${2:b})', doc: 'Math.lcm (std/Math)' },
+          { name: 'factorial', snippet: 'factorial(${1:n})', doc: 'Math.factorial (std/Math)' },
+          { name: 'int_sqrt', snippet: 'int_sqrt(${1:n})', doc: 'Math.int_sqrt (std/Math)' }
+        ];
+
+        for (const fn of mathFunctions) {
+          completions.push(createAutoImportCompletion(document, fn.name, fn.snippet, fn.doc, mathModule));
+        }
 
         // Constants
         completions.push(createCompletion('true', 'true', vscode.CompletionItemKind.Constant, 'Boolean true'));
@@ -71,3 +78,67 @@ function createCompletion(
 }
 
 export function deactivate() {}
+
+function createAutoImportCompletion(
+  document: vscode.TextDocument,
+  label: string,
+  insertText: string,
+  documentation: string,
+  modulePath: string
+): vscode.CompletionItem {
+  const item = createCompletion(label, insertText, vscode.CompletionItemKind.Function, documentation);
+  const edits = buildAutoImportEdits(document, label, modulePath);
+  if (edits.length > 0) {
+    item.additionalTextEdits = edits;
+  }
+  return item;
+}
+
+function buildAutoImportEdits(
+  document: vscode.TextDocument,
+  symbol: string,
+  modulePath: string
+): vscode.TextEdit[] {
+  const text = document.getText();
+  const lines = text.split(/\r?\n/);
+
+  const importAllRegex = new RegExp(`^\\s*import\\s+["']${escapeRegExp(modulePath)}["']\\s*;`, 'm');
+  if (importAllRegex.test(text)) {
+    return [];
+  }
+
+  const namedImportRegex = new RegExp(`^\\s*import\\s*\\{([^}]*)\\}\\s*from\\s*["']${escapeRegExp(modulePath)}["']\\s*;`, 'm');
+  const match = text.match(namedImportRegex);
+  if (match && typeof match.index === 'number') {
+    const existingList = match[1].split(',').map(s => s.trim()).filter(Boolean);
+    if (existingList.includes(symbol)) {
+      return [];
+    }
+
+    const line = text.slice(0, match.index).split(/\r?\n/).length - 1;
+    const lineText = lines[line];
+    const startIndex = lineText.indexOf('{');
+    const endIndex = lineText.indexOf('}');
+    if (startIndex >= 0 && endIndex > startIndex) {
+      const insertPos = new vscode.Position(line, endIndex);
+      const prefix = existingList.length > 0 ? ', ' : ' ';
+      return [vscode.TextEdit.insert(insertPos, `${prefix}${symbol}`)];
+    }
+  }
+
+  let insertLine = 0;
+  for (let i = 0; i < lines.length; i++) {
+    if (/^\s*import\b/.test(lines[i])) {
+      insertLine = i + 1;
+    }
+  }
+
+  const importLine = `import { ${symbol} } from "${modulePath}";`;
+  const insertPos = new vscode.Position(insertLine, 0);
+  const suffix = insertLine < lines.length ? '\n' : '';
+  return [vscode.TextEdit.insert(insertPos, `${importLine}${suffix}`)];
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
