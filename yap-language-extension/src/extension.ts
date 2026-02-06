@@ -101,7 +101,7 @@ export function activate(context: vscode.ExtensionContext) {
   });
 
   const hoverProvider = vscode.languages.registerHoverProvider('yap', {
-    provideHover(document, position) {
+    async provideHover(document, position) {
       const wordRange = document.getWordRangeAtPosition(position, /[A-Za-z_][A-Za-z0-9_]*/);
       if (!wordRange) {
         return null;
@@ -110,6 +110,20 @@ export function activate(context: vscode.ExtensionContext) {
       const name = document.getText(wordRange);
       const doc = getBuiltinDoc(name);
       if (!doc) {
+        const localHover = buildUserFunctionHover(document, name);
+        if (localHover) {
+          return new vscode.Hover(localHover);
+        }
+
+        const def = await findFunctionDefinitionInWorkspace(name, document.uri);
+        if (def) {
+          const defDoc = await vscode.workspace.openTextDocument(def.uri);
+          const workspaceHover = buildUserFunctionHover(defDoc, name);
+          if (workspaceHover) {
+            return new vscode.Hover(workspaceHover);
+          }
+        }
+
         return null;
       }
 
@@ -170,6 +184,37 @@ function getBuiltinDoc(name: string): string | null {
   };
 
   return docs[name] || null;
+}
+
+function buildUserFunctionHover(document: vscode.TextDocument, name: string): vscode.MarkdownString | null {
+  const text = document.getText();
+  const regex = new RegExp(`\\b(?:export\\s+)?fn\\s+${escapeRegExp(name)}\\s*\\(([^)]*)\\)`);
+  const match = regex.exec(text);
+  if (!match || typeof match.index !== 'number') {
+    return null;
+  }
+
+  const params = match[1].trim();
+  const signature = params.length > 0 ? `fn ${name}(${params})` : `fn ${name}()`;
+
+  const defLine = document.positionAt(match.index).line;
+  const docLines: string[] = [];
+  for (let line = defLine - 1; line >= 0; line--) {
+    const textLine = document.lineAt(line).text.trim();
+    if (!textLine.startsWith('//')) {
+      break;
+    }
+    docLines.push(textLine.replace(/^\/\//, '').trim());
+  }
+  docLines.reverse();
+
+  const md = new vscode.MarkdownString();
+  md.appendMarkdown(`**${name}**\n\n`);
+  md.appendCodeblock(signature, 'yap');
+  if (docLines.length > 0) {
+    md.appendMarkdown(`\n${docLines.join('\n')}\n`);
+  }
+  return md;
 }
 
 function createAutoImportCompletion(
