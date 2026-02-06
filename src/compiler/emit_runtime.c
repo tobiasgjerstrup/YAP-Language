@@ -4,6 +4,8 @@ void emit_string_section(Codegen *cg) {
     emit(cg, ".section .rodata\n");
     emit(cg, ".LC0:\n");
     emit(cg, "    .string \"%%ld\\n\"\n");
+    emit(cg, ".LC_ERR_FORMAT:\n");
+    emit(cg, "    .string \"Runtime Error: Line %%d:%%d: %%s\\n\"\n");
     emit(cg, ".LC_INT_FORMAT:\n");
     emit(cg, "    .string \"%%ld\"\n");
     emit(cg, ".LC_TRUE:\n");
@@ -37,6 +39,16 @@ void emit_runtime_helpers(Codegen *cg) {
     emit(cg, ".align 4\n");
     emit(cg, "yap_rand_seeded:\n");
     emit(cg, "    .long 0\n");
+    emit(cg, ".align 4\n");
+    emit(cg, "yap_err_flag:\n");
+    emit(cg, "    .long 0\n");
+    emit(cg, "yap_err_line:\n");
+    emit(cg, "    .long 0\n");
+    emit(cg, "yap_err_col:\n");
+    emit(cg, "    .long 0\n");
+    emit(cg, ".align 8\n");
+    emit(cg, "yap_err_msg:\n");
+    emit(cg, "    .quad 0\n");
     emit(cg, ".text\n");
 
     emit(cg, "\n.globl yap_timestamp\n");
@@ -430,6 +442,24 @@ void emit_runtime_helpers(Codegen *cg) {
     emit(cg, "    pop r13\n");
     emit(cg, "    pop r12\n");
     emit(cg, "    pop rbx\n");
+    emit(cg, "    pop rbp\n");
+    emit(cg, "    ret\n");
+
+    emit(cg, "\n.globl yap_unhandled\n");
+    emit(cg, ".type yap_unhandled, @function\n");
+    emit(cg, "yap_unhandled:\n");
+    emit(cg, "    push rbp\n");
+    emit(cg, "    mov rbp, rsp\n");
+    emit(cg, "    mov eax, DWORD PTR [rip + yap_err_line]\n");
+    emit(cg, "    mov ecx, DWORD PTR [rip + yap_err_col]\n");
+    emit(cg, "    mov rdx, rcx\n");
+    emit(cg, "    mov esi, eax\n");
+    emit(cg, "    mov rcx, QWORD PTR [rip + yap_err_msg]\n");
+    emit(cg, "    lea rdi, [rip + .LC_ERR_FORMAT]\n");
+    emit(cg, "    xor eax, eax\n");
+    emit(cg, "    call printf@PLT\n");
+    emit(cg, "    mov edi, 1\n");
+    emit(cg, "    call exit@PLT\n");
     emit(cg, "    pop rbp\n");
     emit(cg, "    ret\n");
 }

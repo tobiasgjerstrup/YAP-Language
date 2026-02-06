@@ -56,6 +56,7 @@ void prepass_strings(Codegen *cg, ASTNode *node) {
             prepass_strings(cg, node->data.try_stmt.finally_block);
             break;
         case NODE_THROW:
+            add_string(cg, node->data.throw_stmt.message);
             break;
         default:
             break;
@@ -304,6 +305,9 @@ void collect_locals(Codegen *cg, ASTNode *node) {
             collect_locals(cg, node->data.array_index.index);
             return;
         case NODE_TRY:
+            if (node->data.try_stmt.catch_name) {
+                add_local(cg, node->data.try_stmt.catch_name);
+            }
             collect_locals(cg, node->data.try_stmt.try_block);
             collect_locals(cg, node->data.try_stmt.catch_block);
             collect_locals(cg, node->data.try_stmt.finally_block);

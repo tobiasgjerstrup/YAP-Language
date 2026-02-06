@@ -1,6 +1,37 @@
 #include "compiler/emit.h"
 #include "compiler/codegen_ctx.h"
 
+static void push_try(Codegen *cg, int catch_label, int finally_label, int has_catch) {
+    if (cg->try_depth >= MAX_TRY_DEPTH) {
+        set_error(cg, NULL, "Too many nested try blocks");
+        return;
+    }
+    cg->try_catch_labels[cg->try_depth] = catch_label;
+    cg->try_finally_labels[cg->try_depth] = finally_label;
+    cg->try_has_catch[cg->try_depth] = has_catch;
+    cg->try_depth += 1;
+}
+
+static void pop_try(Codegen *cg) {
+    if (cg->try_depth > 0) {
+        cg->try_depth -= 1;
+    }
+}
+
+static int current_handler_label(Codegen *cg) {
+    if (cg->try_depth <= 0) return -1;
+    int idx = cg->try_depth - 1;
+    if (cg->try_has_catch[idx]) return cg->try_catch_labels[idx];
+    return cg->try_finally_labels[idx];
+}
+
+static int outer_handler_label(Codegen *cg) {
+    if (cg->try_depth <= 1) return -1;
+    int idx = cg->try_depth - 2;
+    if (cg->try_has_catch[idx]) return cg->try_catch_labels[idx];
+    return cg->try_finally_labels[idx];
+}
+
 void gen_print(Codegen *cg, ASTNode *node) {
     VarType print_type = expr_is_string(cg, node->data.print_stmt.value);
     gen_expr(cg, node->data.print_stmt.value);
@@ -107,11 +138,85 @@ void gen_stmt(Codegen *cg, ASTNode *node) {
             gen_expr(cg, node);
             return;
         case NODE_THROW:
-            set_error(cg, node, "throw is not supported in compiler mode yet");
+        {
+            int label_id = add_string(cg, node->data.throw_stmt.message);
+            if (label_id < 0) {
+                set_error(cg, node, "Too many string literals");
+                return;
+            }
+            emit(cg, "    lea rax, [rip + .LC%d]\n", label_id);
+            emit(cg, "    mov QWORD PTR [rip + yap_err_msg], rax\n");
+            emit(cg, "    mov DWORD PTR [rip + yap_err_line], %d\n", node->line);
+            emit(cg, "    mov DWORD PTR [rip + yap_err_col], %d\n", node->column);
+            emit(cg, "    mov DWORD PTR [rip + yap_err_flag], 1\n");
+
+            int handler = current_handler_label(cg);
+            if (handler >= 0) {
+                emit(cg, "    jmp .L%d\n", handler);
+            } else {
+                emit(cg, "    call yap_unhandled\n");
+            }
             return;
+        }
         case NODE_TRY:
-            set_error(cg, node, "try/catch/finally is not supported in compiler mode yet");
+        {
+            int has_catch = node->data.try_stmt.catch_block != NULL;
+            int has_finally = node->data.try_stmt.finally_block != NULL;
+
+            int catch_label = has_catch ? get_label(cg) : -1;
+            int finally_label = has_finally ? get_label(cg) : -1;
+            int end_label = get_label(cg);
+
+            if (cg->has_error) return;
+
+            emit(cg, "    mov DWORD PTR [rip + yap_err_flag], 0\n");
+            push_try(cg, catch_label, finally_label, has_catch);
+            gen_stmt(cg, node->data.try_stmt.try_block);
+            pop_try(cg);
+
+            if (has_finally) {
+                emit(cg, "    jmp .L%d\n", finally_label);
+            } else {
+                emit(cg, "    jmp .L%d\n", end_label);
+            }
+
+            if (has_catch) {
+                emit(cg, ".L%d:\n", catch_label);
+                if (node->data.try_stmt.catch_name) {
+                    int idx = find_local(cg, node->data.try_stmt.catch_name);
+                    if (idx < 0) {
+                        idx = add_local(cg, node->data.try_stmt.catch_name);
+                    }
+                    set_local_type(cg, node->data.try_stmt.catch_name, TYPE_STRING);
+                    emit(cg, "    mov rax, QWORD PTR [rip + yap_err_msg]\n");
+                    emit(cg, "    mov QWORD PTR [rbp-%d], rax\n", cg->locals[idx].offset);
+                }
+                emit(cg, "    mov DWORD PTR [rip + yap_err_flag], 0\n");
+                gen_stmt(cg, node->data.try_stmt.catch_block);
+                if (has_finally) {
+                    emit(cg, "    jmp .L%d\n", finally_label);
+                } else {
+                    emit(cg, "    jmp .L%d\n", end_label);
+                }
+            }
+
+            if (has_finally) {
+                emit(cg, ".L%d:\n", finally_label);
+                gen_stmt(cg, node->data.try_stmt.finally_block);
+
+                emit(cg, "    cmp DWORD PTR [rip + yap_err_flag], 0\n");
+                emit(cg, "    je .L%d\n", end_label);
+                int outer = outer_handler_label(cg);
+                if (outer >= 0) {
+                    emit(cg, "    jmp .L%d\n", outer);
+                } else {
+                    emit(cg, "    call yap_unhandled\n");
+                }
+            }
+
+            emit(cg, ".L%d:\n", end_label);
             return;
+        }
         default:
             set_error(cg, node, "Unsupported statement node");
             return;

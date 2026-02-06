@@ -8,6 +8,7 @@
 #define MAX_LABELS 1024
 #define MAX_FUNCTIONS 256
 #define MAX_STRINGS 256
+#define MAX_TRY_DEPTH 64
 
 typedef enum { TYPE_INT = 0, TYPE_STRING = 1, TYPE_BOOL = 2, TYPE_ARRAY = 3 } VarType;
 
@@ -43,6 +44,10 @@ typedef struct {
     StringConstant strings[MAX_STRINGS];
     int string_count;
     const char *current_function_name;
+    int try_depth;
+    int try_catch_labels[MAX_TRY_DEPTH];
+    int try_finally_labels[MAX_TRY_DEPTH];
+    int try_has_catch[MAX_TRY_DEPTH];
 } Codegen;
 
 void set_error(Codegen *cg, ASTNode *node, const char *fmt, ...);
