@@ -76,18 +76,7 @@ static int emit_assembly(Codegen *cg, ASTNode *program, const char *asm_path) {
     }
     set_local_type(cg, "args", TYPE_ARRAY);
 
-    for (int i = 0; i < program->statement_count; i++) {
-        ASTNode *stmt = program->statements[i];
-        if (stmt->type == NODE_VAR_DECL) {
-            add_local(cg, stmt->data.var_decl.name);
-        } else if (stmt->type == NODE_BLOCK) {
-            for (int j = 0; j < stmt->statement_count; j++) {
-                if (stmt->statements[j]->type == NODE_VAR_DECL) {
-                    add_local(cg, stmt->statements[j]->data.var_decl.name);
-                }
-            }
-        }
-    }
+    collect_locals(cg, program);
 
     int raw_stack = cg->local_count * 8;
     cg->stack_size = ((raw_stack + 15) / 16 * 16) + 8;
