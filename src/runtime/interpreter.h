@@ -28,6 +28,10 @@ typedef struct {
     int function_count;
     int return_flag;
     Value return_value;
+    int error_flag;
+    int error_line;
+    int error_column;
+    char *error_message;
 } Interpreter;
 
 Interpreter* interpreter_create(void);

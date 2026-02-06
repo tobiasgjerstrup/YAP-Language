@@ -50,6 +50,13 @@ void prepass_strings(Codegen *cg, ASTNode *node) {
                 prepass_strings(cg, node->data.call.args[i]);
             }
             break;
+        case NODE_TRY:
+            prepass_strings(cg, node->data.try_stmt.try_block);
+            prepass_strings(cg, node->data.try_stmt.catch_block);
+            prepass_strings(cg, node->data.try_stmt.finally_block);
+            break;
+        case NODE_THROW:
+            break;
         default:
             break;
     }
@@ -229,6 +236,13 @@ void infer_param_types(Codegen *cg, ASTNode *node, FunctionDef *current_func, in
             infer_param_types(cg, node->data.array_index.array, current_func, changed);
             infer_param_types(cg, node->data.array_index.index, current_func, changed);
             return;
+        case NODE_TRY:
+            infer_param_types(cg, node->data.try_stmt.try_block, current_func, changed);
+            infer_param_types(cg, node->data.try_stmt.catch_block, current_func, changed);
+            infer_param_types(cg, node->data.try_stmt.finally_block, current_func, changed);
+            return;
+        case NODE_THROW:
+            return;
         default:
             return;
     }
@@ -288,6 +302,13 @@ void collect_locals(Codegen *cg, ASTNode *node) {
         case NODE_ARRAY_INDEX:
             collect_locals(cg, node->data.array_index.array);
             collect_locals(cg, node->data.array_index.index);
+            return;
+        case NODE_TRY:
+            collect_locals(cg, node->data.try_stmt.try_block);
+            collect_locals(cg, node->data.try_stmt.catch_block);
+            collect_locals(cg, node->data.try_stmt.finally_block);
+            return;
+        case NODE_THROW:
             return;
         default:
             return;

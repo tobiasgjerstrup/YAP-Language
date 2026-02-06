@@ -332,6 +332,20 @@ ASTNode* ast_copy_node(ASTNode *node) {
             copy->data.array_index.array = ast_copy_node(node->data.array_index.array);
             copy->data.array_index.index = ast_copy_node(node->data.array_index.index);
             break;
+        case NODE_TRY:
+            copy->data.try_stmt.try_block = ast_copy_node(node->data.try_stmt.try_block);
+            copy->data.try_stmt.catch_block = ast_copy_node(node->data.try_stmt.catch_block);
+            copy->data.try_stmt.finally_block = ast_copy_node(node->data.try_stmt.finally_block);
+            copy->data.try_stmt.catch_name = NULL;
+            if (node->data.try_stmt.catch_name) {
+                copy->data.try_stmt.catch_name = malloc(strlen(node->data.try_stmt.catch_name) + 1);
+                strcpy(copy->data.try_stmt.catch_name, node->data.try_stmt.catch_name);
+            }
+            break;
+        case NODE_THROW:
+            copy->data.throw_stmt.message = malloc(strlen(node->data.throw_stmt.message) + 1);
+            strcpy(copy->data.throw_stmt.message, node->data.throw_stmt.message);
+            break;
         default:
             copy->data = node->data;
             break;

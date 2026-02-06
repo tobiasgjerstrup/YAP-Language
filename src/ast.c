@@ -155,6 +155,26 @@ ASTNode* ast_create_import_stmt(const char *module_path, char **imports, int imp
     return node;
 }
 
+ASTNode* ast_create_try_stmt(ASTNode *try_block, const char *catch_name, ASTNode *catch_block, ASTNode *finally_block) {
+    ASTNode *node = ast_create_node(NODE_TRY);
+    node->data.try_stmt.try_block = try_block;
+    node->data.try_stmt.catch_name = NULL;
+    if (catch_name) {
+        node->data.try_stmt.catch_name = malloc(strlen(catch_name) + 1);
+        strcpy(node->data.try_stmt.catch_name, catch_name);
+    }
+    node->data.try_stmt.catch_block = catch_block;
+    node->data.try_stmt.finally_block = finally_block;
+    return node;
+}
+
+ASTNode* ast_create_throw_stmt(const char *message) {
+    ASTNode *node = ast_create_node(NODE_THROW);
+    node->data.throw_stmt.message = malloc(strlen(message) + 1);
+    strcpy(node->data.throw_stmt.message, message);
+    return node;
+}
+
 void ast_free(ASTNode *node) {
     if (!node) return;
     
@@ -243,6 +263,15 @@ void ast_free(ASTNode *node) {
                 }
                 free(node->data.import_stmt.imports);
             }
+            break;
+        case NODE_TRY:
+            ast_free(node->data.try_stmt.try_block);
+            ast_free(node->data.try_stmt.catch_block);
+            ast_free(node->data.try_stmt.finally_block);
+            if (node->data.try_stmt.catch_name) free(node->data.try_stmt.catch_name);
+            break;
+        case NODE_THROW:
+            free(node->data.throw_stmt.message);
             break;
         default:
             break;

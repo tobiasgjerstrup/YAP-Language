@@ -8,6 +8,31 @@
 
 static Value eval_node_inner(Interpreter *interp, ASTNode *node);
 
+static void clear_error(Interpreter *interp) {
+    if (interp->error_message) {
+        free(interp->error_message);
+        interp->error_message = NULL;
+    }
+    interp->error_flag = 0;
+    interp->error_line = 0;
+    interp->error_column = 0;
+}
+
+static void raise_error(Interpreter *interp, const char *message, ASTNode *node) {
+    if (interp->error_flag) {
+        clear_error(interp);
+    }
+    interp->error_flag = 1;
+    interp->error_line = node ? node->line : 0;
+    interp->error_column = node ? node->column : 0;
+    if (message) {
+        interp->error_message = malloc(strlen(message) + 1);
+        strcpy(interp->error_message, message);
+    } else {
+        interp->error_message = NULL;
+    }
+}
+
 static Value eval_binary_op(Interpreter *interp, ASTNode *node) {
     Value left = eval_node_inner(interp, node->data.binary_op.left);
     Value right = eval_node_inner(interp, node->data.binary_op.right);
@@ -283,7 +308,7 @@ static Value eval_call(Interpreter *interp, ASTNode *node) {
 static Value eval_node_inner(Interpreter *interp, ASTNode *node) {
     if (!node) return value_create_null();
 
-    if (interp->return_flag) return value_create_null();
+    if (interp->return_flag || interp->error_flag) return value_create_null();
 
     switch (node->type) {
         case NODE_PROGRAM:
@@ -292,7 +317,7 @@ static Value eval_node_inner(Interpreter *interp, ASTNode *node) {
             for (int i = 0; i < node->statement_count; i++) {
                 value_free(result);
                 result = eval_node_inner(interp, node->statements[i]);
-                if (interp->return_flag) break;
+                if (interp->return_flag || interp->error_flag) break;
             }
             return result;
         }
@@ -330,6 +355,10 @@ static Value eval_node_inner(Interpreter *interp, ASTNode *node) {
             Value result = value_create_null();
             while (1) {
                 Value cond = eval_node_inner(interp, node->data.while_stmt.condition);
+                if (interp->error_flag) {
+                    value_free(cond);
+                    break;
+                }
                 if (!value_to_bool(cond)) {
                     value_free(cond);
                     break;
@@ -337,7 +366,7 @@ static Value eval_node_inner(Interpreter *interp, ASTNode *node) {
                 value_free(cond);
                 value_free(result);
                 result = eval_node_inner(interp, node->data.while_stmt.body);
-                if (interp->return_flag) break;
+                if (interp->return_flag || interp->error_flag) break;
             }
             return result;
         }
@@ -352,6 +381,10 @@ static Value eval_node_inner(Interpreter *interp, ASTNode *node) {
 
         case NODE_PRINT_STMT: {
             Value val = eval_node_inner(interp, node->data.print_stmt.value);
+            if (interp->error_flag) {
+                value_free(val);
+                return value_create_null();
+            }
             printf("%s\n", value_to_string(val));
             value_free(val);
             return value_create_null();
@@ -359,8 +392,85 @@ static Value eval_node_inner(Interpreter *interp, ASTNode *node) {
 
         case NODE_ASSIGNMENT: {
             Value value = eval_node_inner(interp, node->data.assignment.value);
+            if (interp->error_flag) return value_create_null();
             assign_variable(interp, node->data.assignment.name, value);
             return value_copy(value);
+        }
+
+        case NODE_THROW:
+            raise_error(interp, node->data.throw_stmt.message, node);
+            return value_create_null();
+
+        case NODE_TRY: {
+            int had_error = 0;
+            char *pending_message = NULL;
+            int pending_line = 0;
+            int pending_column = 0;
+
+            eval_node_inner(interp, node->data.try_stmt.try_block);
+
+            if (interp->error_flag) {
+                had_error = 1;
+                pending_message = interp->error_message;
+                pending_line = interp->error_line;
+                pending_column = interp->error_column;
+                interp->error_message = NULL;
+                interp->error_flag = 0;
+                interp->error_line = 0;
+                interp->error_column = 0;
+            }
+
+            if (had_error && node->data.try_stmt.catch_block) {
+                Scope *old_scope = interp->current_scope;
+                Scope *new_scope = malloc(sizeof(Scope));
+                new_scope->variables = NULL;
+                new_scope->parent = old_scope;
+                interp->current_scope = new_scope;
+
+                if (node->data.try_stmt.catch_name) {
+                    Value err_val = value_create_string(pending_message ? pending_message : "error");
+                    define_variable(interp, node->data.try_stmt.catch_name, err_val);
+                }
+
+                if (pending_message) {
+                    free(pending_message);
+                    pending_message = NULL;
+                }
+
+                eval_node_inner(interp, node->data.try_stmt.catch_block);
+
+                Variable *var = new_scope->variables;
+                while (var) {
+                    Variable *next = var->next;
+                    free(var->name);
+                    value_free(var->value);
+                    free(var);
+                    var = next;
+                }
+                interp->current_scope = old_scope;
+                free(new_scope);
+                had_error = 0;
+            }
+
+            if (node->data.try_stmt.finally_block) {
+                eval_node_inner(interp, node->data.try_stmt.finally_block);
+            }
+
+            if (interp->error_flag) {
+                if (pending_message) free(pending_message);
+                return value_create_null();
+            }
+
+            if (had_error && !node->data.try_stmt.catch_block) {
+                interp->error_flag = 1;
+                interp->error_message = pending_message;
+                interp->error_line = pending_line;
+                interp->error_column = pending_column;
+                return value_create_null();
+            }
+
+            if (pending_message) free(pending_message);
+            return value_create_null();
         }
 
         case NODE_CALL:

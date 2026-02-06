@@ -1,6 +1,7 @@
 #include "runtime/interpreter.h"
 #include "runtime/interpreter_internal.h"
 #include "runtime/eval.h"
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -16,6 +17,10 @@ Interpreter* interpreter_create(void) {
     interp->function_count = 0;
     interp->return_flag = 0;
     interp->return_value = value_create_null();
+    interp->error_flag = 0;
+    interp->error_line = 0;
+    interp->error_column = 0;
+    interp->error_message = NULL;
 
     return interp;
 }
@@ -47,6 +52,9 @@ void interpreter_destroy(Interpreter *interp) {
     if (interp->functions) free(interp->functions);
 
     value_free(interp->return_value);
+    if (interp->error_message) {
+        free(interp->error_message);
+    }
     free(interp);
 }
 
@@ -126,6 +134,16 @@ void register_function(Interpreter *interp, const char *name, char **params,
 
 void interpreter_execute(Interpreter *interp, ASTNode *program) {
     eval_node(interp, program);
+    if (interp->error_flag) {
+        fprintf(stderr, "Runtime Error: Line %d:%d: %s\n",
+                interp->error_line, interp->error_column,
+                interp->error_message ? interp->error_message : "unknown error");
+        free(interp->error_message);
+        interp->error_message = NULL;
+        interp->error_flag = 0;
+        interp->error_line = 0;
+        interp->error_column = 0;
+    }
 }
 
 Value interpreter_eval(Interpreter *interp, ASTNode *node) {

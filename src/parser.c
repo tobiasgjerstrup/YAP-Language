@@ -58,6 +58,8 @@ static ASTNode* parse_statement(Parser *parser);
 static ASTNode* parse_expression(Parser *parser);
 static ASTNode* parse_func_decl_internal(Parser *parser, int is_exported);
 static ASTNode* parse_import_stmt(Parser *parser);
+static ASTNode* parse_try_stmt(Parser *parser);
+static ASTNode* parse_throw_stmt(Parser *parser);
 
 static ASTNode* parse_primary(Parser *parser) {
     if (match(parser, TOKEN_INT)) {
@@ -420,6 +422,82 @@ static ASTNode* parse_print_stmt(Parser *parser) {
     return node;
 }
 
+static ASTNode* parse_throw_stmt(Parser *parser) {
+    Token start_tok = parser->current_token;
+    consume(parser, TOKEN_THROW, "Expected 'throw'");
+
+    if (!match(parser, TOKEN_STRING)) {
+        set_error(parser, "throw expects a string literal");
+        return NULL;
+    }
+
+    char *message = malloc(strlen(parser->current_token.value) + 1);
+    strcpy(message, parser->current_token.value);
+    advance(parser);
+    consume(parser, TOKEN_SEMICOLON, "Expected ';'");
+
+    ASTNode *node = ast_create_throw_stmt(message);
+    set_location(node, start_tok);
+    free(message);
+    return node;
+}
+
+static ASTNode* parse_try_stmt(Parser *parser) {
+    Token start_tok = parser->current_token;
+    consume(parser, TOKEN_TRY, "Expected 'try'");
+
+    if (!match(parser, TOKEN_LBRACE)) {
+        set_error(parser, "Expected '{' after try");
+        return NULL;
+    }
+    ASTNode *try_block = parse_block(parser);
+
+    char *catch_name = NULL;
+    ASTNode *catch_block = NULL;
+    ASTNode *finally_block = NULL;
+
+    if (match(parser, TOKEN_CATCH)) {
+        advance(parser);
+        consume(parser, TOKEN_LPAREN, "Expected '(' after catch");
+        if (!match(parser, TOKEN_IDENTIFIER)) {
+            set_error(parser, "Expected identifier in catch");
+            return NULL;
+        }
+        catch_name = malloc(strlen(parser->current_token.value) + 1);
+        strcpy(catch_name, parser->current_token.value);
+        advance(parser);
+        consume(parser, TOKEN_RPAREN, "Expected ')'");
+
+        if (!match(parser, TOKEN_LBRACE)) {
+            set_error(parser, "Expected '{' after catch");
+            free(catch_name);
+            return NULL;
+        }
+        catch_block = parse_block(parser);
+    }
+
+    if (match(parser, TOKEN_FINALLY)) {
+        advance(parser);
+        if (!match(parser, TOKEN_LBRACE)) {
+            set_error(parser, "Expected '{' after finally");
+            if (catch_name) free(catch_name);
+            return NULL;
+        }
+        finally_block = parse_block(parser);
+    }
+
+    if (!catch_block && !finally_block) {
+        set_error(parser, "try must have catch or finally");
+        if (catch_name) free(catch_name);
+        return NULL;
+    }
+
+    ASTNode *node = ast_create_try_stmt(try_block, catch_name, catch_block, finally_block);
+    set_location(node, start_tok);
+    if (catch_name) free(catch_name);
+    return node;
+}
+
 static ASTNode* parse_func_decl_internal(Parser *parser, int is_exported) {
     Token start_tok = parser->current_token;
     
@@ -599,6 +677,14 @@ static ASTNode* parse_statement(Parser *parser) {
     
     if (match(parser, TOKEN_PRINT)) {
         return parse_print_stmt(parser);
+    }
+
+    if (match(parser, TOKEN_THROW)) {
+        return parse_throw_stmt(parser);
+    }
+
+    if (match(parser, TOKEN_TRY)) {
+        return parse_try_stmt(parser);
     }
     
     if (match(parser, TOKEN_LBRACE)) {

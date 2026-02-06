@@ -249,6 +249,18 @@ ok = assert_neq_int(random(), random(), "random different");
 pass = pass + ok;
 fail = fail + (1 - ok);
 
+try {
+    throw "boom";
+    fail = fail + 1; // Should not reach here
+} catch (e) {
+    print(e);
+    ok = assert_eq_str(e, "boom", "catch exception");
+    pass = pass + ok;
+} finally {
+    print("cleanup");
+}
+
+
 print("Passed: " + pass);
 print("Failed: " + fail);
 

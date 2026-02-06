@@ -22,6 +22,10 @@ typedef enum {
     TOKEN_IMPORT,
     TOKEN_EXPORT,
     TOKEN_FROM,
+    TOKEN_TRY,
+    TOKEN_CATCH,
+    TOKEN_FINALLY,
+    TOKEN_THROW,
     
     // Operators
     TOKEN_PLUS,

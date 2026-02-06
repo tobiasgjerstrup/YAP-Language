@@ -22,7 +22,9 @@ typedef enum {
     NODE_BLOCK,
     NODE_ARRAY_LITERAL,
     NODE_ARRAY_INDEX,
-    NODE_IMPORT
+    NODE_IMPORT,
+    NODE_TRY,
+    NODE_THROW
 } NodeType;
 
 typedef struct {
@@ -116,6 +118,17 @@ typedef struct {
     ASTNode *index;
 } ArrayIndex;
 
+typedef struct {
+    ASTNode *try_block;
+    char *catch_name;
+    ASTNode *catch_block;
+    ASTNode *finally_block;
+} TryStmt;
+
+typedef struct {
+    char *message;
+} ThrowStmt;
+
 struct ASTNode {
     NodeType type;
     int line;
@@ -139,6 +152,8 @@ struct ASTNode {
         ArrayLiteral array_literal;
         ArrayIndex array_index;
         ImportStmt import_stmt;
+        TryStmt try_stmt;
+        ThrowStmt throw_stmt;
     } data;
     ASTNode **statements; // for PROGRAM and BLOCK
     int statement_count;
@@ -163,6 +178,8 @@ ASTNode* ast_create_identifier(const char *name);
 ASTNode* ast_create_array_literal(ASTNode **elements, int count);
 ASTNode* ast_create_array_index(ASTNode *array, ASTNode *index);
 ASTNode* ast_create_import_stmt(const char *module_path, char **imports, int import_count);
+ASTNode* ast_create_try_stmt(ASTNode *try_block, const char *catch_name, ASTNode *catch_block, ASTNode *finally_block);
+ASTNode* ast_create_throw_stmt(const char *message);
 void ast_free(ASTNode *node);
 
 #endif // AST_H

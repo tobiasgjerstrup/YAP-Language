@@ -106,6 +106,12 @@ void gen_stmt(Codegen *cg, ASTNode *node) {
         case NODE_CALL:
             gen_expr(cg, node);
             return;
+        case NODE_THROW:
+            set_error(cg, node, "throw is not supported in compiler mode yet");
+            return;
+        case NODE_TRY:
+            set_error(cg, node, "try/catch/finally is not supported in compiler mode yet");
+            return;
         default:
             set_error(cg, node, "Unsupported statement node");
             return;

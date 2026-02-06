@@ -122,6 +122,10 @@ static YapTokenType keyword_type(const char *ident) {
     if (strcmp(ident, "import") == 0) return TOKEN_IMPORT;
     if (strcmp(ident, "export") == 0) return TOKEN_EXPORT;
     if (strcmp(ident, "from") == 0) return TOKEN_FROM;
+    if (strcmp(ident, "try") == 0) return TOKEN_TRY;
+    if (strcmp(ident, "catch") == 0) return TOKEN_CATCH;
+    if (strcmp(ident, "finally") == 0) return TOKEN_FINALLY;
+    if (strcmp(ident, "throw") == 0) return TOKEN_THROW;
     return TOKEN_IDENTIFIER;
 }
 
