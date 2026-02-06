@@ -2,7 +2,7 @@
   "name": "yap-language",
   "displayName": "YAP Language",
   "description": "Syntax highlighting for YAP programming language",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "publisher": "tobiasgjerstrup",
   "repository": {
     "type": "git",

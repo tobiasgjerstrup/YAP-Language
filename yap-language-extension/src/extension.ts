@@ -100,7 +100,24 @@ export function activate(context: vscode.ExtensionContext) {
     }
   });
 
-  context.subscriptions.push(provider, formatter, formatOnSave, definitionProvider);
+  const hoverProvider = vscode.languages.registerHoverProvider('yap', {
+    provideHover(document, position) {
+      const wordRange = document.getWordRangeAtPosition(position, /[A-Za-z_][A-Za-z0-9_]*/);
+      if (!wordRange) {
+        return null;
+      }
+
+      const name = document.getText(wordRange);
+      const doc = getBuiltinDoc(name);
+      if (!doc) {
+        return null;
+      }
+
+      return new vscode.Hover(new vscode.MarkdownString(doc));
+    }
+  });
+
+  context.subscriptions.push(provider, formatter, formatOnSave, definitionProvider, hoverProvider);
 }
 
 function createCompletion(
@@ -117,6 +134,43 @@ function createCompletion(
 }
 
 export function deactivate() {}
+
+function getBuiltinDoc(name: string): string | null {
+  const docs: Record<string, string> = {
+    // Direct C functions
+    print: '**print**\n\nPrints a value with a newline.\n\n`print(value);`',
+    read: '**read**\n\nReads a file and returns its contents as a string.\n\n`read("path")`',
+    write: '**write**\n\nWrites a string to a file (overwrites). Returns 0 on success.\n\n`write("path", content);`',
+    append: '**append**\n\nAppends a string to a file. Returns 0 on success.\n\n`append("path", content);`',
+    push: '**push**\n\nReturns a new array with the value appended.\n\n`push(array, value)`',
+    pop: '**pop**\n\nRemoves and returns the last element of an array.\n\n`pop(array)`',
+    random: '**random**\n\nReturns a non-negative random integer.\n\n`random()`',
+    timestamp: '**timestamp**\n\nReturns the current Unix timestamp (seconds).\n\n`timestamp()`',
+
+    // std/Math functions
+    abs: '**abs** (std/Math)\n\nAbsolute value.\n\n`abs(x)`',
+    sign: '**sign** (std/Math)\n\nSign of a number (-1, 0, 1).\n\n`sign(x)`',
+    max: '**max** (std/Math)\n\nMaximum of two numbers.\n\n`max(a, b)`',
+    min: '**min** (std/Math)\n\nMinimum of two numbers.\n\n`min(a, b)`',
+    clamp: '**clamp** (std/Math)\n\nClamp a number to [lo, hi].\n\n`clamp(x, lo, hi)`',
+    is_even: '**is_even** (std/Math)\n\nTrue if the number is even.\n\n`is_even(x)`',
+    is_odd: '**is_odd** (std/Math)\n\nTrue if the number is odd.\n\n`is_odd(x)`',
+    pow: '**pow** (std/Math)\n\nPower function.\n\n`pow(base, exp)`',
+    gcd: '**gcd** (std/Math)\n\nGreatest common divisor.\n\n`gcd(a, b)`',
+    lcm: '**lcm** (std/Math)\n\nLeast common multiple.\n\n`lcm(a, b)`',
+    factorial: '**factorial** (std/Math)\n\nFactorial of n.\n\n`factorial(n)`',
+    int_sqrt: '**int_sqrt** (std/Math)\n\nInteger square root (floor).\n\n`int_sqrt(n)`',
+
+    // Keywords and built-in variables
+    try: '**try**\n\nStarts a try/catch/finally block.\n\n`try {\n\t// code\n} catch (error) {\n\t// handle\n} finally {\n\t// cleanup\n}`',
+    catch: '**catch**\n\nStarts a catch block (used with try).\n\n`catch (error) {\n\t// handle\n}`',
+    finally: '**finally**\n\nStarts a finally block (used with try).\n\n`finally {\n\t// cleanup\n}`',
+    throw: '**throw**\n\nThrows an error.\n\n`throw "message";`',
+    args: '**args**\n\nArray of command-line arguments passed to the program.\n\n`args`'
+  };
+
+  return docs[name] || null;
+}
 
 function createAutoImportCompletion(
   document: vscode.TextDocument,
