@@ -109,25 +109,39 @@ export function activate(context: vscode.ExtensionContext) {
 
       const name = document.getText(wordRange);
       const doc = getBuiltinDoc(name);
-      if (!doc) {
-        const localHover = buildUserFunctionHover(document, name);
-        if (localHover) {
-          return new vscode.Hover(localHover);
-        }
-
-        const def = await findFunctionDefinitionInWorkspace(name, document.uri);
-        if (def) {
-          const defDoc = await vscode.workspace.openTextDocument(def.uri);
-          const workspaceHover = buildUserFunctionHover(defDoc, name);
-          if (workspaceHover) {
-            return new vscode.Hover(workspaceHover);
-          }
-        }
-
-        return null;
+      if (doc) {
+        return new vscode.Hover(new vscode.MarkdownString(doc));
       }
 
-      return new vscode.Hover(new vscode.MarkdownString(doc));
+      const localFnHover = buildUserFunctionHover(document, name);
+      if (localFnHover) {
+        return new vscode.Hover(localFnHover);
+      }
+
+      const localVarHover = buildUserVariableHover(document, name, position);
+      if (localVarHover) {
+        return new vscode.Hover(localVarHover);
+      }
+
+      const def = await findFunctionDefinitionInWorkspace(name, document.uri);
+      if (def) {
+        const defDoc = await vscode.workspace.openTextDocument(def.uri);
+        const workspaceFnHover = buildUserFunctionHover(defDoc, name);
+        if (workspaceFnHover) {
+          return new vscode.Hover(workspaceFnHover);
+        }
+      }
+
+      const varDef = await findVariableDefinitionInWorkspace(name, document.uri);
+      if (varDef) {
+        const defDoc = await vscode.workspace.openTextDocument(varDef.uri);
+        const workspaceVarHover = buildUserVariableHover(defDoc, name, varDef.range.start);
+        if (workspaceVarHover) {
+          return new vscode.Hover(workspaceVarHover);
+        }
+      }
+
+      return null;
     }
   });
 
@@ -198,6 +212,55 @@ function buildUserFunctionHover(document: vscode.TextDocument, name: string): vs
   const signature = params.length > 0 ? `fn ${name}(${params})` : `fn ${name}()`;
 
   const defLine = document.positionAt(match.index).line;
+  const docLines: string[] = [];
+  for (let line = defLine - 1; line >= 0; line--) {
+    const textLine = document.lineAt(line).text.trim();
+    if (!textLine.startsWith('//')) {
+      break;
+    }
+    docLines.push(textLine.replace(/^\/\//, '').trim());
+  }
+  docLines.reverse();
+
+  const md = new vscode.MarkdownString();
+  md.appendMarkdown(`**${name}**\n\n`);
+  md.appendCodeblock(signature, 'yap');
+  if (docLines.length > 0) {
+    md.appendMarkdown(`\n${docLines.join('\n')}\n`);
+  }
+  return md;
+}
+
+function buildUserVariableHover(
+  document: vscode.TextDocument,
+  name: string,
+  position: vscode.Position
+): vscode.MarkdownString | null {
+  const text = document.getText();
+  const regex = new RegExp(`\\bvar\\s+${escapeRegExp(name)}\\b([^;]*)`, 'g');
+  let match: RegExpExecArray | null = null;
+  let bestMatch: RegExpExecArray | null = null;
+  let bestLine = -1;
+
+  while ((match = regex.exec(text)) !== null) {
+    const defPos = document.positionAt(match.index);
+    if (defPos.line > position.line) {
+      continue;
+    }
+    if (defPos.line >= bestLine) {
+      bestLine = defPos.line;
+      bestMatch = match;
+    }
+  }
+
+  if (!bestMatch || typeof bestMatch.index !== 'number') {
+    return null;
+  }
+
+  const defLine = document.positionAt(bestMatch.index).line;
+  const tail = bestMatch[1] ? bestMatch[1].trim() : '';
+  const signature = tail.length > 0 ? `var ${name}${tail}` : `var ${name}`;
+
   const docLines: string[] = [];
   for (let line = defLine - 1; line >= 0; line--) {
     const textLine = document.lineAt(line).text.trim();
@@ -314,6 +377,41 @@ async function findFunctionDefinitionInWorkspace(
   }
 
   return null;
+}
+
+async function findVariableDefinitionInWorkspace(
+  name: string,
+  currentUri: vscode.Uri
+): Promise<vscode.Location | null> {
+  const files = await vscode.workspace.findFiles('**/*.yap', '**/node_modules/**');
+  for (const uri of files) {
+    if (uri.toString() === currentUri.toString()) {
+      continue;
+    }
+
+    const doc = await vscode.workspace.openTextDocument(uri);
+    const hit = findVariableDefinitionInDocument(doc, name);
+    if (hit) {
+      return hit;
+    }
+  }
+
+  return null;
+}
+
+function findVariableDefinitionInDocument(
+  document: vscode.TextDocument,
+  name: string
+): vscode.Location | null {
+  const text = document.getText();
+  const regex = new RegExp(`\\bvar\\s+${escapeRegExp(name)}\\b`);
+  const match = regex.exec(text);
+  if (!match || typeof match.index !== 'number') {
+    return null;
+  }
+
+  const position = document.positionAt(match.index);
+  return new vscode.Location(document.uri, position);
 }
 
 function formatDocument(document: vscode.TextDocument, indentSize: number): vscode.TextEdit[] {
