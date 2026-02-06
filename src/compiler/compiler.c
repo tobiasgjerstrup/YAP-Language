@@ -155,7 +155,7 @@ int compiler_compile(ASTNode *program, const char *output_path, char *error, siz
     }
 
     char cmd[1024];
-    snprintf(cmd, sizeof(cmd), "gcc -no-pie -o %s %s", out_path, asm_path);
+    snprintf(cmd, sizeof(cmd), "gcc -no-pie -o %s %s src/compiler/runtime_sqlite.c -lsqlite3", out_path, asm_path);
     int rc = system(cmd);
 
     if (rc != 0) {

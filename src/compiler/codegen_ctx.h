@@ -10,7 +10,15 @@
 #define MAX_STRINGS 256
 #define MAX_TRY_DEPTH 64
 
-typedef enum { TYPE_INT = 0, TYPE_STRING = 1, TYPE_BOOL = 2, TYPE_ARRAY = 3 } VarType;
+typedef enum {
+    TYPE_INT = 0,
+    TYPE_STRING = 1,
+    TYPE_BOOL = 2,
+    TYPE_ARRAY = 3,
+    TYPE_ARRAY2 = 4,
+    TYPE_ARRAY_STR = 5,
+    TYPE_ARRAY2_STR = 6
+} VarType;
 
 typedef struct {
     char *name;

@@ -84,6 +84,7 @@ Native compilation generates x86_64 assembly and links it with `gcc`.
 
 Notes:
 - Compile mode uses `gcc` to link.
+- Compile mode links `sqlite3` when using SQLite built-ins.
 - Compile mode is not supported on Windows yet.
 
 ## Language Features

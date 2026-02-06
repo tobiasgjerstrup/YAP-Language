@@ -109,13 +109,18 @@ VarType infer_expr_type(Codegen *cg, ASTNode *node, FunctionDef *current_func) {
             return TYPE_ARRAY;
         case NODE_INT_LITERAL:
             return TYPE_INT;
-        case NODE_ARRAY_INDEX:
+        case NODE_ARRAY_INDEX: {
             if (node->data.array_index.array && node->data.array_index.array->type == NODE_IDENTIFIER) {
                 if (strcmp(node->data.array_index.array->data.identifier.name, "args") == 0) {
                     return TYPE_STRING;
                 }
             }
+            VarType arr_type = infer_expr_type(cg, node->data.array_index.array, current_func);
+            if (arr_type == TYPE_ARRAY2_STR) return TYPE_ARRAY_STR;
+            if (arr_type == TYPE_ARRAY2) return TYPE_ARRAY;
+            if (arr_type == TYPE_ARRAY_STR) return TYPE_STRING;
             return TYPE_INT;
+        }
         case NODE_IDENTIFIER:
             if (current_func && current_func->param_types) {
                 for (int i = 0; i < current_func->param_count; i++) {
@@ -145,6 +150,7 @@ VarType infer_expr_type(Codegen *cg, ASTNode *node, FunctionDef *current_func) {
         }
         case NODE_CALL:
             if (strcmp(node->data.call.name, "read") == 0) return TYPE_STRING;
+            if (strcmp(node->data.call.name, "sqlite_query") == 0) return TYPE_ARRAY2_STR;
             return TYPE_INT;
         default:
             return TYPE_INT;

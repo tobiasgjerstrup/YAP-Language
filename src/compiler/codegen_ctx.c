@@ -85,6 +85,9 @@ FunctionDef* find_function(Codegen *cg, const char *name) {
 VarType merge_types(VarType existing, VarType incoming) {
     if (existing == incoming) return existing;
     if (incoming == TYPE_STRING || existing == TYPE_STRING) return TYPE_STRING;
+    if (incoming == TYPE_ARRAY2_STR || existing == TYPE_ARRAY2_STR) return TYPE_ARRAY2_STR;
+    if (incoming == TYPE_ARRAY_STR || existing == TYPE_ARRAY_STR) return TYPE_ARRAY_STR;
+    if (incoming == TYPE_ARRAY2 || existing == TYPE_ARRAY2) return TYPE_ARRAY2;
     if (incoming == TYPE_ARRAY || existing == TYPE_ARRAY) return TYPE_ARRAY;
     if (incoming == TYPE_BOOL || existing == TYPE_BOOL) return TYPE_BOOL;
     return existing;

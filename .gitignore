@@ -3,6 +3,7 @@ build/
 bin/
 dist/
 *.vsix
+*.db
 
 # Prerequisites
 *.d

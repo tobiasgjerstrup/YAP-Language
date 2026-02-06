@@ -24,6 +24,18 @@ static void emit_error_check(Codegen *cg) {
     }
 }
 
+static void emit_array_len(Codegen *cg, const char *reg) {
+    int zero_label = get_label(cg);
+    int end_label = get_label(cg);
+    emit(cg, "    cmp %s, 0\n", reg);
+    emit(cg, "    je .L%d\n", zero_label);
+    emit(cg, "    mov %s, QWORD PTR [%s]\n", reg, reg);
+    emit(cg, "    jmp .L%d\n", end_label);
+    emit(cg, ".L%d:\n", zero_label);
+    emit(cg, "    mov %s, 0\n", reg);
+    emit(cg, ".L%d:\n", end_label);
+}
+
 VarType expr_is_string(Codegen *cg, ASTNode *node) {
     if (!node) return TYPE_INT;
     if (node->type == NODE_STRING_LITERAL) return TYPE_STRING;
@@ -34,6 +46,16 @@ VarType expr_is_string(Codegen *cg, ASTNode *node) {
             if (strcmp(node->data.array_index.array->data.identifier.name, "args") == 0) {
                 return TYPE_STRING;
             }
+        }
+        VarType arr_type = expr_is_string(cg, node->data.array_index.array);
+        if (arr_type == TYPE_ARRAY2_STR) {
+            return TYPE_ARRAY_STR;
+        }
+        if (arr_type == TYPE_ARRAY2) {
+            return TYPE_ARRAY;
+        }
+        if (arr_type == TYPE_ARRAY_STR) {
+            return TYPE_STRING;
         }
         return TYPE_INT;
     }
@@ -62,6 +84,9 @@ VarType expr_is_string(Codegen *cg, ASTNode *node) {
     if (node->type == NODE_CALL) {
         if (strcmp(node->data.call.name, "read") == 0) {
             return TYPE_STRING;
+        }
+        if (strcmp(node->data.call.name, "sqlite_query") == 0) {
+            return TYPE_ARRAY2_STR;
         }
     }
     return TYPE_INT;
@@ -118,6 +143,9 @@ static void gen_binary_op(Codegen *cg, ASTNode *node) {
     if (strcmp(op, "+") == 0) {
         if (left_type == TYPE_STRING || right_type == TYPE_STRING) {
             if (left_type != TYPE_STRING) {
+                if (left_type == TYPE_ARRAY || left_type == TYPE_ARRAY2 || left_type == TYPE_ARRAY_STR || left_type == TYPE_ARRAY2_STR) {
+                    emit_array_len(cg, "rcx");
+                }
                 emit(cg, "    mov rdi, rcx\n");
                 if (left_type == TYPE_BOOL) {
                     emit(cg, "    call yap_bool_to_string\n");
@@ -128,6 +156,9 @@ static void gen_binary_op(Codegen *cg, ASTNode *node) {
             }
 
             if (right_type != TYPE_STRING) {
+                if (right_type == TYPE_ARRAY || right_type == TYPE_ARRAY2 || right_type == TYPE_ARRAY_STR || right_type == TYPE_ARRAY2_STR) {
+                    emit_array_len(cg, "rax");
+                }
                 emit(cg, "    push rcx\n");
                 emit(cg, "    mov rdi, rax\n");
                 if (right_type == TYPE_BOOL) {
@@ -143,23 +174,47 @@ static void gen_binary_op(Codegen *cg, ASTNode *node) {
             emit(cg, "    xor eax, eax\n");
             emit(cg, "    call yap_concat_strings\n");
         } else {
+            if (left_type == TYPE_ARRAY || left_type == TYPE_ARRAY2 || left_type == TYPE_ARRAY_STR || left_type == TYPE_ARRAY2_STR) {
+                emit_array_len(cg, "rcx");
+            }
+            if (right_type == TYPE_ARRAY || right_type == TYPE_ARRAY2 || right_type == TYPE_ARRAY_STR || right_type == TYPE_ARRAY2_STR) {
+                emit_array_len(cg, "rax");
+            }
             emit(cg, "    add rax, rcx\n");
         }
         return;
     }
 
     if (strcmp(op, "-") == 0) {
+        if (left_type == TYPE_ARRAY || left_type == TYPE_ARRAY2 || left_type == TYPE_ARRAY_STR || left_type == TYPE_ARRAY2_STR) {
+            emit_array_len(cg, "rcx");
+        }
+        if (right_type == TYPE_ARRAY || right_type == TYPE_ARRAY2 || right_type == TYPE_ARRAY_STR || right_type == TYPE_ARRAY2_STR) {
+            emit_array_len(cg, "rax");
+        }
         emit(cg, "    sub rcx, rax\n");
         emit(cg, "    mov rax, rcx\n");
         return;
     }
 
     if (strcmp(op, "*") == 0) {
+        if (left_type == TYPE_ARRAY || left_type == TYPE_ARRAY2 || left_type == TYPE_ARRAY_STR || left_type == TYPE_ARRAY2_STR) {
+            emit_array_len(cg, "rcx");
+        }
+        if (right_type == TYPE_ARRAY || right_type == TYPE_ARRAY2 || right_type == TYPE_ARRAY_STR || right_type == TYPE_ARRAY2_STR) {
+            emit_array_len(cg, "rax");
+        }
         emit(cg, "    imul rax, rcx\n");
         return;
     }
 
     if (strcmp(op, "/") == 0 || strcmp(op, "%") == 0) {
+        if (left_type == TYPE_ARRAY || left_type == TYPE_ARRAY2 || left_type == TYPE_ARRAY_STR || left_type == TYPE_ARRAY2_STR) {
+            emit_array_len(cg, "rcx");
+        }
+        if (right_type == TYPE_ARRAY || right_type == TYPE_ARRAY2 || right_type == TYPE_ARRAY_STR || right_type == TYPE_ARRAY2_STR) {
+            emit_array_len(cg, "rax");
+        }
         emit(cg, "    mov rdx, rax\n");
         emit(cg, "    mov rax, rcx\n");
         emit(cg, "    mov rcx, rdx\n");
@@ -188,6 +243,13 @@ static void gen_binary_op(Codegen *cg, ASTNode *node) {
             }
             emit(cg, "    movzx rax, al\n");
             return;
+        }
+
+        if (left_type == TYPE_ARRAY || left_type == TYPE_ARRAY2 || left_type == TYPE_ARRAY_STR || left_type == TYPE_ARRAY2_STR) {
+            emit_array_len(cg, "rcx");
+        }
+        if (right_type == TYPE_ARRAY || right_type == TYPE_ARRAY2 || right_type == TYPE_ARRAY_STR || right_type == TYPE_ARRAY2_STR) {
+            emit_array_len(cg, "rax");
         }
 
         emit(cg, "    cmp rcx, rax\n");
@@ -374,6 +436,60 @@ void gen_expr(Codegen *cg, ASTNode *node) {
                 emit(cg, "    pop rdi\n");
                 emit(cg, "    xor eax, eax\n");
                 emit(cg, "    call yap_file_append\n");
+                return;
+            }
+
+            if (strcmp(node->data.call.name, "sqlite_open") == 0) {
+                if (node->data.call.arg_count != 1) {
+                    set_error(cg, node, "sqlite_open() expects 1 argument: path");
+                    return;
+                }
+                gen_expr(cg, node->data.call.args[0]);
+                emit(cg, "    mov rdi, rax\n");
+                emit(cg, "    xor eax, eax\n");
+                emit(cg, "    call yap_sqlite_open\n");
+                return;
+            }
+
+            if (strcmp(node->data.call.name, "sqlite_close") == 0) {
+                if (node->data.call.arg_count != 1) {
+                    set_error(cg, node, "sqlite_close() expects 1 argument: db");
+                    return;
+                }
+                gen_expr(cg, node->data.call.args[0]);
+                emit(cg, "    mov rdi, rax\n");
+                emit(cg, "    xor eax, eax\n");
+                emit(cg, "    call yap_sqlite_close\n");
+                return;
+            }
+
+            if (strcmp(node->data.call.name, "sqlite_exec") == 0) {
+                if (node->data.call.arg_count != 2) {
+                    set_error(cg, node, "sqlite_exec() expects 2 arguments: db, sql");
+                    return;
+                }
+                gen_expr(cg, node->data.call.args[0]);
+                emit(cg, "    push rax\n");
+                gen_expr(cg, node->data.call.args[1]);
+                emit(cg, "    mov rsi, rax\n");
+                emit(cg, "    pop rdi\n");
+                emit(cg, "    xor eax, eax\n");
+                emit(cg, "    call yap_sqlite_exec\n");
+                return;
+            }
+
+            if (strcmp(node->data.call.name, "sqlite_query") == 0) {
+                if (node->data.call.arg_count != 2) {
+                    set_error(cg, node, "sqlite_query() expects 2 arguments: db, sql");
+                    return;
+                }
+                gen_expr(cg, node->data.call.args[0]);
+                emit(cg, "    push rax\n");
+                gen_expr(cg, node->data.call.args[1]);
+                emit(cg, "    mov rsi, rax\n");
+                emit(cg, "    pop rdi\n");
+                emit(cg, "    xor eax, eax\n");
+                emit(cg, "    call yap_sqlite_query\n");
                 return;
             }
 
