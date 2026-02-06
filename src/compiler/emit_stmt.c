@@ -1,5 +1,6 @@
 #include "compiler/emit.h"
 #include "compiler/codegen_ctx.h"
+#include <string.h>
 
 static void push_try(Codegen *cg, int catch_label, int finally_label, int has_catch) {
     if (cg->try_depth >= MAX_TRY_DEPTH) {
@@ -153,8 +154,10 @@ void gen_stmt(Codegen *cg, ASTNode *node) {
             int handler = current_handler_label(cg);
             if (handler >= 0) {
                 emit(cg, "    jmp .L%d\n", handler);
-            } else {
+            } else if (cg->current_function_name && strcmp(cg->current_function_name, "main") == 0) {
                 emit(cg, "    call yap_unhandled\n");
+            } else if (cg->current_function_name) {
+                emit(cg, "    jmp .%s_ret\n", cg->current_function_name);
             }
             return;
         }
@@ -209,8 +212,10 @@ void gen_stmt(Codegen *cg, ASTNode *node) {
                 int outer = outer_handler_label(cg);
                 if (outer >= 0) {
                     emit(cg, "    jmp .L%d\n", outer);
-                } else {
+                } else if (cg->current_function_name && strcmp(cg->current_function_name, "main") == 0) {
                     emit(cg, "    call yap_unhandled\n");
+                } else if (cg->current_function_name) {
+                    emit(cg, "    jmp .%s_ret\n", cg->current_function_name);
                 }
             }
 

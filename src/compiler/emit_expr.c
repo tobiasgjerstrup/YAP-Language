@@ -2,6 +2,28 @@
 #include "compiler/codegen_ctx.h"
 #include <string.h>
 
+static int current_handler_label(Codegen *cg) {
+    if (cg->try_depth <= 0) return -1;
+    int idx = cg->try_depth - 1;
+    if (cg->try_has_catch[idx]) return cg->try_catch_labels[idx];
+    return cg->try_finally_labels[idx];
+}
+
+static void emit_error_check(Codegen *cg) {
+    emit(cg, "    cmp DWORD PTR [rip + yap_err_flag], 0\n");
+    int handler = current_handler_label(cg);
+    if (handler >= 0) {
+        emit(cg, "    jne .L%d\n", handler);
+    } else if (cg->current_function_name && strcmp(cg->current_function_name, "main") == 0) {
+        int cont_label = get_label(cg);
+        emit(cg, "    je .L%d\n", cont_label);
+        emit(cg, "    call yap_unhandled\n");
+        emit(cg, ".L%d:\n", cont_label);
+    } else if (cg->current_function_name) {
+        emit(cg, "    jne .%s_ret\n", cg->current_function_name);
+    }
+}
+
 VarType expr_is_string(Codegen *cg, ASTNode *node) {
     if (!node) return TYPE_INT;
     if (node->type == NODE_STRING_LITERAL) return TYPE_STRING;
@@ -382,6 +404,7 @@ void gen_expr(Codegen *cg, ASTNode *node) {
 
             emit(cg, "    xor eax, eax\n");
             emit(cg, "    call %s\n", node->data.call.name);
+            emit_error_check(cg);
             return;
         }
         default:
