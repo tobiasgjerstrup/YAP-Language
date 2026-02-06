@@ -227,14 +227,23 @@ function formatDocument(document: vscode.TextDocument, indentSize: number): vsco
       continue;
     }
 
-    if (startsWithClosingBrace(trimmed)) {
+    if (isLineComment(trimmed)) {
+      const desiredIndent = ' '.repeat(indentLevel * indentSize);
+      formattedLines.push(desiredIndent + trimmed);
+      continue;
+    }
+
+    const commentSplit = splitLineComment(trimmed);
+    const codePart = commentSplit.code.trimEnd();
+
+    if (startsWithClosingBrace(codePart)) {
       indentLevel = Math.max(0, indentLevel - 1);
     }
 
     const desiredIndent = ' '.repeat(indentLevel * indentSize);
-    formattedLines.push(desiredIndent + trimmed);
+    formattedLines.push(desiredIndent + (commentSplit.comment ? codePart + commentSplit.comment : codePart));
 
-    if (endsWithOpeningBrace(trimmed)) {
+    if (endsWithOpeningBrace(codePart)) {
       indentLevel += 1;
     }
   }
@@ -255,6 +264,11 @@ function normalizeLines(lines: string[]): string[] {
     const trimmed = line.trim();
     if (trimmed.length === 0) {
       out.push(line);
+      continue;
+    }
+
+    if (isLineComment(trimmed)) {
+      out.push(trimmed);
       continue;
     }
 
@@ -279,6 +293,23 @@ function normalizeLines(lines: string[]): string[] {
   }
 
   return out;
+}
+
+function splitLineComment(text: string): { code: string; comment: string } {
+  let inString = false;
+  for (let i = 0; i < text.length - 1; i++) {
+    const ch = text[i];
+    if (ch === '"') {
+      const prev = i > 0 ? text[i - 1] : '';
+      if (prev !== '\\') {
+        inString = !inString;
+      }
+    }
+    if (!inString && ch === '/' && text[i + 1] === '/') {
+      return { code: text.slice(0, i).trimEnd(), comment: text.slice(i) };
+    }
+  }
+  return { code: text, comment: '' };
 }
 
 function splitInlineBrace(text: string): string[] {
@@ -372,4 +403,8 @@ function endsWithOpeningBrace(text: string): boolean {
     return false;
   }
   return text.endsWith('{') || text.endsWith('[') || text.endsWith('(');
+}
+
+function isLineComment(text: string): boolean {
+  return text.startsWith('//');
 }
