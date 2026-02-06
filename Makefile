@@ -1,11 +1,24 @@
 CC = gcc
-CFLAGS = -Wall -std=c99 -g
+CFLAGS = -Wall -std=c99 -g -Isrc
 SRCDIR = src
 OBJDIR = build
 BINDIR = bin
 
-SOURCES = $(SRCDIR)/main.c $(SRCDIR)/lexer.c $(SRCDIR)/parser.c $(SRCDIR)/ast.c $(SRCDIR)/interpreter.c $(SRCDIR)/compiler.c
-OBJECTS = $(OBJDIR)/main.o $(OBJDIR)/lexer.o $(OBJDIR)/parser.o $(OBJDIR)/ast.o $(OBJDIR)/interpreter.o $(OBJDIR)/compiler.o
+SOURCES = $(SRCDIR)/main.c \
+	$(SRCDIR)/lexer.c \
+	$(SRCDIR)/parser.c \
+	$(SRCDIR)/ast.c \
+	$(SRCDIR)/compiler/compiler.c \
+	$(SRCDIR)/compiler/codegen_ctx.c \
+	$(SRCDIR)/compiler/analysis.c \
+	$(SRCDIR)/compiler/emit_expr.c \
+	$(SRCDIR)/compiler/emit_stmt.c \
+	$(SRCDIR)/compiler/emit_runtime.c \
+	$(SRCDIR)/runtime/interpreter.c \
+	$(SRCDIR)/runtime/eval.c \
+	$(SRCDIR)/runtime/value.c \
+	$(SRCDIR)/runtime/io.c
+OBJECTS = $(patsubst $(SRCDIR)/%.c,$(OBJDIR)/%.o,$(SOURCES))
 EXECUTABLE = $(BINDIR)/yap
 
 all: $(EXECUTABLE)
@@ -16,7 +29,7 @@ $(EXECUTABLE): $(OBJECTS)
 	@echo "Build complete: $(EXECUTABLE)"
 
 $(OBJDIR)/%.o: $(SRCDIR)/%.c
-	@mkdir -p $(OBJDIR)
+	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 clean:

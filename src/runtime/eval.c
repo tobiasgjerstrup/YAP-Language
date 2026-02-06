@@ -1,358 +1,20 @@
-#include "interpreter.h"
+#include "runtime/eval.h"
+#include "runtime/interpreter_internal.h"
+#include "runtime/io.h"
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdio.h>
 #include <time.h>
 
-static char* read_file_contents(const char *path) {
-    FILE *file = fopen(path, "r");
-    if (!file) {
-        return NULL;
-    }
-
-    if (fseek(file, 0, SEEK_END) != 0) {
-        fclose(file);
-        return NULL;
-    }
-
-    long size = ftell(file);
-    if (size < 0) {
-        fclose(file);
-        return NULL;
-    }
-
-    rewind(file);
-
-    char *buffer = malloc((size_t)size + 1);
-    if (!buffer) {
-        fclose(file);
-        return NULL;
-    }
-
-    size_t read_bytes = fread(buffer, 1, (size_t)size, file);
-    buffer[read_bytes] = '\0';
-    fclose(file);
-    return buffer;
-}
-
-static int write_file_contents(const char *path, const char *content, const char *mode) {
-    FILE *file = fopen(path, mode);
-    if (!file) {
-        return -1;
-    }
-
-    size_t len = strlen(content);
-    size_t written = fwrite(content, 1, len, file);
-    fclose(file);
-    return written == len ? 0 : -1;
-}
-
-static ArrayValue* array_create(int capacity) {
-    if (capacity < 0) {
-        return NULL;
-    }
-
-    ArrayValue *arr = malloc(sizeof(ArrayValue));
-    if (!arr) {
-        return NULL;
-    }
-
-    arr->ref_count = 1;
-    arr->length = 0;
-    arr->capacity = capacity;
-    arr->items = NULL;
-    if (capacity > 0) {
-        arr->items = malloc(sizeof(Value) * capacity);
-        if (!arr->items) {
-            free(arr);
-            return NULL;
-        }
-    }
-
-    return arr;
-}
-
-static void array_retain(ArrayValue *arr) {
-    if (arr) {
-        arr->ref_count += 1;
-    }
-}
-
-static void array_release(ArrayValue *arr) {
-    if (!arr) {
-        return;
-    }
-
-    arr->ref_count -= 1;
-    if (arr->ref_count > 0) {
-        return;
-    }
-
-    for (int i = 0; i < arr->length; i++) {
-        value_free(arr->items[i]);
-    }
-
-    free(arr->items);
-    free(arr);
-}
-
-static int array_ensure_capacity(ArrayValue *arr, int min_capacity) {
-    if (!arr) {
-        return 0;
-    }
-
-    if (arr->capacity >= min_capacity) {
-        return 1;
-    }
-
-    int new_capacity = arr->capacity > 0 ? arr->capacity : 4;
-    while (new_capacity < min_capacity) {
-        new_capacity *= 2;
-    }
-
-    Value *new_items = realloc(arr->items, sizeof(Value) * new_capacity);
-    if (!new_items) {
-        return 0;
-    }
-
-    arr->items = new_items;
-    arr->capacity = new_capacity;
-    return 1;
-}
-
-// Value functions
-Value value_create_int(int val) {
-    Value v;
-    v.type = VALUE_INT;
-    v.data.int_val = val;
-    return v;
-}
-
-Value value_create_string(const char *val) {
-    Value v;
-    v.type = VALUE_STRING;
-    v.data.string_val = malloc(strlen(val) + 1);
-    strcpy(v.data.string_val, val);
-    return v;
-}
-
-Value value_create_bool(int val) {
-    Value v;
-    v.type = VALUE_BOOL;
-    v.data.bool_val = val ? 1 : 0;
-    return v;
-}
-
-Value value_create_null() {
-    Value v;
-    v.type = VALUE_NULL;
-    return v;
-}
-
-Value value_create_array(ArrayValue *arr) {
-    Value v;
-    v.type = VALUE_ARRAY;
-    v.data.array_val = arr;
-    return v;
-}
-
-static Value value_copy(Value v) {
-    if (v.type == VALUE_STRING && v.data.string_val) {
-        return value_create_string(v.data.string_val);
-    }
-    if (v.type == VALUE_ARRAY && v.data.array_val) {
-        array_retain(v.data.array_val);
-        return v;
-    }
-    return v;
-}
-
-void value_free(Value v) {
-    if (v.type == VALUE_STRING && v.data.string_val) {
-        free(v.data.string_val);
-    }
-    if (v.type == VALUE_ARRAY && v.data.array_val) {
-        array_release(v.data.array_val);
-    }
-}
-
-int value_to_int(Value v) {
-    switch (v.type) {
-        case VALUE_INT: return v.data.int_val;
-        case VALUE_BOOL: return v.data.bool_val ? 1 : 0;
-        case VALUE_STRING: return atoi(v.data.string_val);
-        case VALUE_ARRAY: return v.data.array_val ? v.data.array_val->length : 0;
-        case VALUE_NULL: return 0;
-    }
-    return 0;
-}
-
-char* value_to_string(Value v) {
-    static char buffer[256];
-    switch (v.type) {
-        case VALUE_INT:
-            sprintf(buffer, "%d", v.data.int_val);
-            return buffer;
-        case VALUE_BOOL:
-            return v.data.bool_val ? "true" : "false";
-        case VALUE_STRING:
-            return v.data.string_val;
-        case VALUE_ARRAY:
-            if (v.data.array_val) {
-                snprintf(buffer, sizeof(buffer), "array(len=%d)", v.data.array_val->length);
-                return buffer;
-            }
-            return "array(len=0)";
-        case VALUE_NULL:
-            return "null";
-    }
-    return "";
-}
-
-int value_to_bool(Value v) {
-    switch (v.type) {
-        case VALUE_INT: return v.data.int_val != 0;
-        case VALUE_BOOL: return v.data.bool_val;
-        case VALUE_STRING: return strlen(v.data.string_val) > 0;
-        case VALUE_ARRAY: return v.data.array_val && v.data.array_val->length > 0;
-        case VALUE_NULL: return 0;
-    }
-    return 0;
-}
-
-// Interpreter functions
-Interpreter* interpreter_create() {
-    Interpreter *interp = malloc(sizeof(Interpreter));
-    
-    Scope *global = malloc(sizeof(Scope));
-    global->variables = NULL;
-    global->parent = NULL;
-    
-    interp->current_scope = global;
-    interp->functions = malloc(sizeof(Function*) * 256);
-    interp->function_count = 0;
-    interp->return_flag = 0;
-    interp->return_value = value_create_null();
-    
-    return interp;
-}
-
-void interpreter_destroy(Interpreter *interp) {
-    // Free all scopes
-    Scope *scope = interp->current_scope;
-    while (scope) {
-        Variable *var = scope->variables;
-        while (var) {
-            Variable *next = var->next;
-            free(var->name);
-            value_free(var->value);
-            free(var);
-            var = next;
-        }
-        Scope *parent = scope->parent;
-        free(scope);
-        scope = parent;
-    }
-    
-    // Free functions (note: bodies are owned by the program AST, so we don't free them)
-    for (int i = 0; i < interp->function_count; i++) {
-        free(interp->functions[i]->name);
-        for (int j = 0; j < interp->functions[i]->param_count; j++) {
-            free(interp->functions[i]->params[j]);
-        }
-        if (interp->functions[i]->params) free(interp->functions[i]->params);
-        free(interp->functions[i]);
-    }
-    if (interp->functions) free(interp->functions);
-    
-    value_free(interp->return_value);
-    free(interp);
-}
-
-static Variable* find_variable(Interpreter *interp, const char *name) {
-    Scope *scope = interp->current_scope;
-    while (scope) {
-        Variable *var = scope->variables;
-        while (var) {
-            if (strcmp(var->name, name) == 0) {
-                return var;
-            }
-            var = var->next;
-        }
-        scope = scope->parent;
-    }
-    return NULL;
-}
-
-static void define_variable(Interpreter *interp, const char *name, Value value) {
-    Variable *var = interp->current_scope->variables;
-    while (var) {
-        if (strcmp(var->name, name) == 0) {
-            value_free(var->value);
-            var->value = value;
-            return;
-        }
-        var = var->next;
-    }
-
-    Variable *new_var = malloc(sizeof(Variable));
-    new_var->name = malloc(strlen(name) + 1);
-    strcpy(new_var->name, name);
-    new_var->value = value;
-    new_var->next = interp->current_scope->variables;
-    interp->current_scope->variables = new_var;
-}
-
-static void assign_variable(Interpreter *interp, const char *name, Value value) {
-    Variable *var = find_variable(interp, name);
-    if (var) {
-        value_free(var->value);
-        var->value = value;
-        return;
-    }
-
-    define_variable(interp, name, value);
-}
-
-static Function* find_function(Interpreter *interp, const char *name) {
-    for (int i = 0; i < interp->function_count; i++) {
-        if (strcmp(interp->functions[i]->name, name) == 0) {
-            return interp->functions[i];
-        }
-    }
-    return NULL;
-}
-
-static void register_function(Interpreter *interp, const char *name, char **params, 
-                             int param_count, ASTNode *body) {
-    Function *func = malloc(sizeof(Function));
-    func->name = malloc(strlen(name) + 1);
-    strcpy(func->name, name);
-    func->param_count = param_count;
-    func->body = body;
-    
-    func->params = NULL;
-    if (param_count > 0) {
-        func->params = malloc(sizeof(char*) * param_count);
-        for (int i = 0; i < param_count; i++) {
-            func->params[i] = malloc(strlen(params[i]) + 1);
-            strcpy(func->params[i], params[i]);
-        }
-    }
-    
-    interp->functions[interp->function_count++] = func;
-}
-
-// Forward declaration
-static Value eval_node(Interpreter *interp, ASTNode *node);
+static Value eval_node_inner(Interpreter *interp, ASTNode *node);
 
 static Value eval_binary_op(Interpreter *interp, ASTNode *node) {
-    Value left = eval_node(interp, node->data.binary_op.left);
-    Value right = eval_node(interp, node->data.binary_op.right);
-    
+    Value left = eval_node_inner(interp, node->data.binary_op.left);
+    Value right = eval_node_inner(interp, node->data.binary_op.right);
+
     const char *op = node->data.binary_op.op;
     Value result;
-    
+
     if (strcmp(op, "+") == 0) {
         if (left.type == VALUE_STRING || right.type == VALUE_STRING) {
             char buffer[512];
@@ -412,18 +74,18 @@ static Value eval_binary_op(Interpreter *interp, ASTNode *node) {
     } else {
         result = value_create_null();
     }
-    
+
     value_free(left);
     value_free(right);
     return result;
 }
 
 static Value eval_unary_op(Interpreter *interp, ASTNode *node) {
-    Value operand = eval_node(interp, node->data.unary_op.operand);
+    Value operand = eval_node_inner(interp, node->data.unary_op.operand);
     Value result;
-    
+
     const char *op = node->data.unary_op.op;
-    
+
     if (strcmp(op, "-") == 0) {
         result = value_create_int(-value_to_int(operand));
     } else if (strcmp(op, "!") == 0) {
@@ -431,7 +93,7 @@ static Value eval_unary_op(Interpreter *interp, ASTNode *node) {
     } else {
         result = value_create_null();
     }
-    
+
     value_free(operand);
     return result;
 }
@@ -467,7 +129,7 @@ static Value eval_call(Interpreter *interp, ASTNode *node) {
             return value_create_null();
         }
 
-        Value path_val = eval_node(interp, node->data.call.args[0]);
+        Value path_val = eval_node_inner(interp, node->data.call.args[0]);
         const char *path = value_to_string(path_val);
         char *contents = read_file_contents(path);
         value_free(path_val);
@@ -488,8 +150,8 @@ static Value eval_call(Interpreter *interp, ASTNode *node) {
             return value_create_null();
         }
 
-        Value path_val = eval_node(interp, node->data.call.args[0]);
-        Value content_val = eval_node(interp, node->data.call.args[1]);
+        Value path_val = eval_node_inner(interp, node->data.call.args[0]);
+        Value content_val = eval_node_inner(interp, node->data.call.args[1]);
         const char *path = value_to_string(path_val);
         const char *content = value_to_string(content_val);
         int rc = write_file_contents(path, content, "w");
@@ -505,8 +167,8 @@ static Value eval_call(Interpreter *interp, ASTNode *node) {
             return value_create_null();
         }
 
-        Value path_val = eval_node(interp, node->data.call.args[0]);
-        Value content_val = eval_node(interp, node->data.call.args[1]);
+        Value path_val = eval_node_inner(interp, node->data.call.args[0]);
+        Value content_val = eval_node_inner(interp, node->data.call.args[1]);
         const char *path = value_to_string(path_val);
         const char *content = value_to_string(content_val);
         int rc = write_file_contents(path, content, "a");
@@ -522,7 +184,7 @@ static Value eval_call(Interpreter *interp, ASTNode *node) {
             return value_create_null();
         }
 
-        Value array_val = eval_node(interp, node->data.call.args[0]);
+        Value array_val = eval_node_inner(interp, node->data.call.args[0]);
         if (array_val.type != VALUE_ARRAY || !array_val.data.array_val) {
             value_free(array_val);
             fprintf(stderr, "Runtime Error: Line %d:%d: push() expects an array value\n",
@@ -530,7 +192,7 @@ static Value eval_call(Interpreter *interp, ASTNode *node) {
             return value_create_null();
         }
 
-        Value item_val = eval_node(interp, node->data.call.args[1]);
+        Value item_val = eval_node_inner(interp, node->data.call.args[1]);
         ArrayValue *arr = array_val.data.array_val;
         if (!array_ensure_capacity(arr, arr->length + 1)) {
             value_free(item_val);
@@ -552,7 +214,7 @@ static Value eval_call(Interpreter *interp, ASTNode *node) {
             return value_create_null();
         }
 
-        Value array_val = eval_node(interp, node->data.call.args[0]);
+        Value array_val = eval_node_inner(interp, node->data.call.args[0]);
         if (array_val.type != VALUE_ARRAY || !array_val.data.array_val) {
             value_free(array_val);
             fprintf(stderr, "Runtime Error: Line %d:%d: pop() expects an array value\n",
@@ -569,48 +231,42 @@ static Value eval_call(Interpreter *interp, ASTNode *node) {
         return arr->items[arr->length];
     }
 
-    Function *func = find_function(interp, node->data.call.name);
-    
+    Function *func = interp_find_function(interp, node->data.call.name);
+
     if (!func) {
-        fprintf(stderr, "Runtime Error: Line %d:%d: Function '%s' not found\n", 
+        fprintf(stderr, "Runtime Error: Line %d:%d: Function '%s' not found\n",
                 node->line, node->column, node->data.call.name);
         return value_create_null();
     }
-    
+
     if (node->data.call.arg_count != func->param_count) {
         fprintf(stderr, "Runtime Error: Line %d:%d: Function '%s' expects %d arguments, got %d\n",
                 node->line, node->column, node->data.call.name, func->param_count, node->data.call.arg_count);
         return value_create_null();
     }
-    
-    // Create new scope
+
     Scope *old_scope = interp->current_scope;
     Scope *new_scope = malloc(sizeof(Scope));
     new_scope->variables = NULL;
     new_scope->parent = old_scope;
     interp->current_scope = new_scope;
-    
-    // Bind arguments to parameters
+
     for (int i = 0; i < func->param_count; i++) {
-        Value arg_value = eval_node(interp, node->data.call.args[i]);
+        Value arg_value = eval_node_inner(interp, node->data.call.args[i]);
         define_variable(interp, func->params[i], arg_value);
     }
-    
-    // Execute function body
-    Value result = eval_node(interp, func->body);
-    
-    // Handle return value
+
+    Value result = eval_node_inner(interp, func->body);
+
     if (interp->return_flag) {
         result = interp->return_value;
         interp->return_flag = 0;
         interp->return_value = value_create_null();
     }
-    
-    // Restore scope
+
     Scope *restore_scope = interp->current_scope;
     interp->current_scope = old_scope;
-    
-    // Free new scope
+
     Variable *var = restore_scope->variables;
     while (var) {
         Variable *next = var->next;
@@ -620,119 +276,118 @@ static Value eval_call(Interpreter *interp, ASTNode *node) {
         var = next;
     }
     free(restore_scope);
-    
+
     return result;
 }
 
-static Value eval_node(Interpreter *interp, ASTNode *node) {
+static Value eval_node_inner(Interpreter *interp, ASTNode *node) {
     if (!node) return value_create_null();
-    
+
     if (interp->return_flag) return value_create_null();
-    
+
     switch (node->type) {
         case NODE_PROGRAM:
         case NODE_BLOCK: {
             Value result = value_create_null();
             for (int i = 0; i < node->statement_count; i++) {
                 value_free(result);
-                result = eval_node(interp, node->statements[i]);
+                result = eval_node_inner(interp, node->statements[i]);
                 if (interp->return_flag) break;
             }
             return result;
         }
-        
+
         case NODE_VAR_DECL: {
-            Value value = node->data.var_decl.value ? 
-                         eval_node(interp, node->data.var_decl.value) : 
+            Value value = node->data.var_decl.value ?
+                         eval_node_inner(interp, node->data.var_decl.value) :
                          value_create_int(0);
             define_variable(interp, node->data.var_decl.name, value);
             return value_create_null();
         }
-        
+
         case NODE_FUNC_DECL:
-            register_function(interp, node->data.func_decl.name, 
-                            node->data.func_decl.params, 
+            register_function(interp, node->data.func_decl.name,
+                            node->data.func_decl.params,
                             node->data.func_decl.param_count,
                             node->data.func_decl.body);
             return value_create_null();
-        
+
         case NODE_IF_STMT: {
-            Value cond = eval_node(interp, node->data.if_stmt.condition);
+            Value cond = eval_node_inner(interp, node->data.if_stmt.condition);
             Value result;
             if (value_to_bool(cond)) {
-                result = eval_node(interp, node->data.if_stmt.then_branch);
+                result = eval_node_inner(interp, node->data.if_stmt.then_branch);
             } else if (node->data.if_stmt.else_branch) {
-                result = eval_node(interp, node->data.if_stmt.else_branch);
+                result = eval_node_inner(interp, node->data.if_stmt.else_branch);
             } else {
                 result = value_create_null();
             }
             value_free(cond);
             return result;
         }
-        
+
         case NODE_WHILE_STMT: {
             Value result = value_create_null();
             while (1) {
-                Value cond = eval_node(interp, node->data.while_stmt.condition);
+                Value cond = eval_node_inner(interp, node->data.while_stmt.condition);
                 if (!value_to_bool(cond)) {
                     value_free(cond);
                     break;
                 }
                 value_free(cond);
                 value_free(result);
-                result = eval_node(interp, node->data.while_stmt.body);
+                result = eval_node_inner(interp, node->data.while_stmt.body);
                 if (interp->return_flag) break;
             }
             return result;
         }
-        
+
         case NODE_RETURN_STMT: {
-            interp->return_value = node->data.return_stmt.value ? 
-                                   eval_node(interp, node->data.return_stmt.value) : 
+            interp->return_value = node->data.return_stmt.value ?
+                                   eval_node_inner(interp, node->data.return_stmt.value) :
                                    value_create_null();
             interp->return_flag = 1;
             return value_create_null();
         }
-        
+
         case NODE_PRINT_STMT: {
-            Value val = eval_node(interp, node->data.print_stmt.value);
+            Value val = eval_node_inner(interp, node->data.print_stmt.value);
             printf("%s\n", value_to_string(val));
             value_free(val);
             return value_create_null();
         }
-        
+
         case NODE_ASSIGNMENT: {
-            Value value = eval_node(interp, node->data.assignment.value);
+            Value value = eval_node_inner(interp, node->data.assignment.value);
             assign_variable(interp, node->data.assignment.name, value);
             return value_copy(value);
         }
-        
+
         case NODE_CALL:
             return eval_call(interp, node);
-        
+
         case NODE_BINARY_OP:
             return eval_binary_op(interp, node);
-        
+
         case NODE_UNARY_OP:
             return eval_unary_op(interp, node);
-        
+
         case NODE_INT_LITERAL:
             return value_create_int(node->data.int_literal.value);
-        
+
         case NODE_STRING_LITERAL:
             return value_create_string(node->data.string_literal.value);
-        
+
         case NODE_BOOL_LITERAL:
             return value_create_bool(node->data.bool_literal.value);
-        
+
         case NODE_IDENTIFIER: {
             Variable *var = find_variable(interp, node->data.identifier.name);
             if (!var) {
-                fprintf(stderr, "Runtime Error: Line %d:%d: Variable '%s' not defined\n", 
+                fprintf(stderr, "Runtime Error: Line %d:%d: Variable '%s' not defined\n",
                        node->line, node->column, node->data.identifier.name);
                 return value_create_null();
             }
-            // Return a copy of the variable value
             Value result;
             if (var->value.type == VALUE_STRING) {
                 result = value_create_string(var->value.data.string_val);
@@ -754,7 +409,7 @@ static Value eval_node(Interpreter *interp, ASTNode *node) {
             }
 
             for (int i = 0; i < count; i++) {
-                Value elem = eval_node(interp, node->data.array_literal.elements[i]);
+                Value elem = eval_node_inner(interp, node->data.array_literal.elements[i]);
                 if (!array_ensure_capacity(arr, arr->length + 1)) {
                     value_free(elem);
                     fprintf(stderr, "Runtime Error: Line %d:%d: Failed to grow array\n",
@@ -770,8 +425,8 @@ static Value eval_node(Interpreter *interp, ASTNode *node) {
         }
 
         case NODE_ARRAY_INDEX: {
-            Value array_val = eval_node(interp, node->data.array_index.array);
-            Value index_val = eval_node(interp, node->data.array_index.index);
+            Value array_val = eval_node_inner(interp, node->data.array_index.array);
+            Value index_val = eval_node_inner(interp, node->data.array_index.index);
             if (array_val.type != VALUE_ARRAY || !array_val.data.array_val) {
                 value_free(index_val);
                 value_free(array_val);
@@ -793,23 +448,12 @@ static Value eval_node(Interpreter *interp, ASTNode *node) {
             value_free(array_val);
             return result;
         }
-        
+
         default:
             return value_create_null();
     }
 }
 
-void interpreter_execute(Interpreter *interp, ASTNode *program) {
-    eval_node(interp, program);
-}
-
-Value interpreter_eval(Interpreter *interp, ASTNode *node) {
-    return eval_node(interp, node);
-}
-
-void interpreter_define_global(Interpreter *interp, const char *name, Value value) {
-    if (!interp || !name) {
-        return;
-    }
-    define_variable(interp, name, value);
+Value eval_node(Interpreter *interp, ASTNode *node) {
+    return eval_node_inner(interp, node);
 }

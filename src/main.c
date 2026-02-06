@@ -13,8 +13,8 @@
 #endif
 #include "lexer.h"
 #include "parser.h"
-#include "interpreter.h"
-#include "compiler.h"
+#include "runtime/interpreter.h"
+#include "compiler/compiler.h"
 
 static int has_yap_extension(const char *path) {
     size_t len = strlen(path);

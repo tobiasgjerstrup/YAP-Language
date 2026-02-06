@@ -2,33 +2,7 @@
 #define INTERPRETER_H
 
 #include "ast.h"
-
-typedef enum {
-    VALUE_INT,
-    VALUE_STRING,
-    VALUE_BOOL,
-    VALUE_NULL,
-    VALUE_ARRAY
-} ValueType;
-
-typedef struct ArrayValue ArrayValue;
-
-typedef struct {
-    ValueType type;
-    union {
-        int int_val;
-        char *string_val;
-        int bool_val;
-        ArrayValue *array_val;
-    } data;
-} Value;
-
-struct ArrayValue {
-    int ref_count;
-    int length;
-    int capacity;
-    Value *items;
-};
+#include "runtime/value.h"
 
 typedef struct Function {
     char *name;
@@ -56,21 +30,10 @@ typedef struct {
     Value return_value;
 } Interpreter;
 
-Interpreter* interpreter_create();
+Interpreter* interpreter_create(void);
 void interpreter_destroy(Interpreter *interp);
 void interpreter_execute(Interpreter *interp, ASTNode *program);
 Value interpreter_eval(Interpreter *interp, ASTNode *node);
-
-Value value_create_int(int val);
-Value value_create_string(const char *val);
-Value value_create_bool(int val);
-Value value_create_null();
-Value value_create_array(ArrayValue *arr);
-void value_free(Value v);
-int value_to_int(Value v);
-char* value_to_string(Value v);
-int value_to_bool(Value v);
-
 void interpreter_define_global(Interpreter *interp, const char *name, Value value);
 
 #endif // INTERPRETER_H
