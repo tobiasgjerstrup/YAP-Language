@@ -9,7 +9,7 @@
     },
     {
       "name": "keyword.control",
-      "match": "\\b(if|else|while|return|import|export|from)\\b"
+      "match": "\\b(if|else|while|return|import|export|from|try|catch|finally|throw)\\b"
     },
     {
       "name": "keyword.declaration",
@@ -27,6 +27,10 @@
     {
       "name": "constant.language",
       "match": "\\b(true|false)\\b"
+    },
+    {
+      "name": "variable.other.constant",
+      "match": "\\bargs\\b"
     },
     {
       "name": "support.function",

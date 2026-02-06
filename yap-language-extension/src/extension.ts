@@ -15,6 +15,10 @@ export function activate(context: vscode.ExtensionContext) {
         completions.push(createCompletion('if', 'if (${1:condition}) {\n\t${2:// code}\n}', vscode.CompletionItemKind.Keyword, 'If statement'));
         completions.push(createCompletion('else', 'else {\n\t${1:// code}\n}', vscode.CompletionItemKind.Keyword, 'Else statement'));
         completions.push(createCompletion('while', 'while (${1:condition}) {\n\t${2:// code}\n}', vscode.CompletionItemKind.Keyword, 'While loop'));
+        completions.push(createCompletion('try', 'try {\n\t${1:// code}\n} catch (${2:error}) {\n\t${3:// handle}\n} finally {\n\t${4:// cleanup}\n}', vscode.CompletionItemKind.Keyword, 'Try/catch/finally block'));
+        completions.push(createCompletion('catch', 'catch (${1:error}) {\n\t${2:// handle}\n}', vscode.CompletionItemKind.Keyword, 'Catch block'));
+        completions.push(createCompletion('finally', 'finally {\n\t${1:// cleanup}\n}', vscode.CompletionItemKind.Keyword, 'Finally block'));
+        completions.push(createCompletion('throw', 'throw "${1:message}";', vscode.CompletionItemKind.Keyword, 'Throw error'));
         completions.push(createCompletion('return', 'return ${1:value};', vscode.CompletionItemKind.Keyword, 'Return statement'));
         completions.push(createCompletion('import', 'import { ${1:name} } from "${2:path}";', vscode.CompletionItemKind.Keyword, 'Import named exports'));
         completions.push(createCompletion('import all', 'import "${1:path}";', vscode.CompletionItemKind.Keyword, 'Import all exports'));
