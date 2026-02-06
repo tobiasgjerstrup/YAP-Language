@@ -41,9 +41,11 @@ if errorlevel 1 goto error
 if errorlevel 1 goto error
 %CC% %CFLAGS% -c %SRCDIR%\runtime\io.c -o %OBJDIR%\runtime\io.o
 if errorlevel 1 goto error
+%CC% %CFLAGS% -c %SRCDIR%\runtime\sqlite.c -o %OBJDIR%\runtime\sqlite.o
+if errorlevel 1 goto error
 
 echo Linking...
-%CC% %CFLAGS% %OBJDIR%\main.o %OBJDIR%\lexer.o %OBJDIR%\parser.o %OBJDIR%\ast.o %OBJDIR%\compiler\compiler.o %OBJDIR%\compiler\codegen_ctx.o %OBJDIR%\compiler\analysis.o %OBJDIR%\compiler\emit_expr.o %OBJDIR%\compiler\emit_stmt.o %OBJDIR%\compiler\emit_runtime.o %OBJDIR%\runtime\interpreter.o %OBJDIR%\runtime\eval.o %OBJDIR%\runtime\value.o %OBJDIR%\runtime\io.o -o %BINDIR%\yap.exe
+%CC% %CFLAGS% %OBJDIR%\main.o %OBJDIR%\lexer.o %OBJDIR%\parser.o %OBJDIR%\ast.o %OBJDIR%\compiler\compiler.o %OBJDIR%\compiler\codegen_ctx.o %OBJDIR%\compiler\analysis.o %OBJDIR%\compiler\emit_expr.o %OBJDIR%\compiler\emit_stmt.o %OBJDIR%\compiler\emit_runtime.o %OBJDIR%\runtime\interpreter.o %OBJDIR%\runtime\eval.o %OBJDIR%\runtime\value.o %OBJDIR%\runtime\io.o %OBJDIR%\runtime\sqlite.o -lsqlite3 -o %BINDIR%\yap.exe
 if errorlevel 1 goto error
 
 echo Build complete: %BINDIR%\yap.exe

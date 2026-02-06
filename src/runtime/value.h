@@ -6,10 +6,13 @@ typedef enum {
     VALUE_STRING,
     VALUE_BOOL,
     VALUE_NULL,
-    VALUE_ARRAY
+    VALUE_ARRAY,
+    VALUE_DB
 } ValueType;
 
 typedef struct ArrayValue ArrayValue;
+typedef struct DbValue DbValue;
+struct sqlite3;
 
 typedef struct {
     ValueType type;
@@ -18,6 +21,7 @@ typedef struct {
         char *string_val;
         int bool_val;
         ArrayValue *array_val;
+        DbValue *db_val;
     } data;
 } Value;
 
@@ -28,11 +32,17 @@ struct ArrayValue {
     Value *items;
 };
 
+struct DbValue {
+    int ref_count;
+    struct sqlite3 *handle;
+};
+
 Value value_create_int(int val);
 Value value_create_string(const char *val);
 Value value_create_bool(int val);
 Value value_create_null(void);
 Value value_create_array(ArrayValue *arr);
+Value value_create_db(DbValue *db);
 Value value_copy(Value v);
 void value_free(Value v);
 int value_to_int(Value v);
@@ -43,5 +53,9 @@ ArrayValue* array_create(int capacity);
 void array_retain(ArrayValue *arr);
 void array_release(ArrayValue *arr);
 int array_ensure_capacity(ArrayValue *arr, int min_capacity);
+
+DbValue* db_create(struct sqlite3 *handle);
+void db_retain(DbValue *db);
+void db_release(DbValue *db);
 
 #endif // VALUE_H

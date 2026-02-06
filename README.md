@@ -39,11 +39,15 @@ YAP is a small programming language written in C with both an interpreter and a 
 make
 ```
 
+SQLite support requires the `sqlite3` development library (linked via `-lsqlite3`).
+
 ### Windows (MinGW)
 
 ```bash
 build.bat
 ```
+
+SQLite support requires `sqlite3` available to MinGW (headers and import library).
 
 Build output is [bin/yap](bin/yap) (or [bin/yap.exe](bin/yap.exe) on Windows).
 
@@ -99,6 +103,7 @@ Built-ins:
 - `read(filename)`, `write(filename, content)`, `append(filename, content)`
 - `push(array, value)`, `pop(array)`
 - `random()`, `timestamp()`
+- `sqlite_open(path)`, `sqlite_close(db)`, `sqlite_exec(db, sql)`, `sqlite_query(db, sql)`
 
 Example (imports + stdlib):
 

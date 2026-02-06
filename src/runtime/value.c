@@ -1,4 +1,5 @@
 #include "runtime/value.h"
+#include <sqlite3.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -76,6 +77,45 @@ int array_ensure_capacity(ArrayValue *arr, int min_capacity) {
     return 1;
 }
 
+DbValue* db_create(struct sqlite3 *handle) {
+    if (!handle) {
+        return NULL;
+    }
+
+    DbValue *db = malloc(sizeof(DbValue));
+    if (!db) {
+        return NULL;
+    }
+
+    db->ref_count = 1;
+    db->handle = handle;
+    return db;
+}
+
+void db_retain(DbValue *db) {
+    if (db) {
+        db->ref_count += 1;
+    }
+}
+
+void db_release(DbValue *db) {
+    if (!db) {
+        return;
+    }
+
+    db->ref_count -= 1;
+    if (db->ref_count > 0) {
+        return;
+    }
+
+    if (db->handle) {
+        sqlite3_close(db->handle);
+        db->handle = NULL;
+    }
+
+    free(db);
+}
+
 Value value_create_int(int val) {
     Value v;
     v.type = VALUE_INT;
@@ -111,12 +151,23 @@ Value value_create_array(ArrayValue *arr) {
     return v;
 }
 
+Value value_create_db(DbValue *db) {
+    Value v;
+    v.type = VALUE_DB;
+    v.data.db_val = db;
+    return v;
+}
+
 Value value_copy(Value v) {
     if (v.type == VALUE_STRING && v.data.string_val) {
         return value_create_string(v.data.string_val);
     }
     if (v.type == VALUE_ARRAY && v.data.array_val) {
         array_retain(v.data.array_val);
+        return v;
+    }
+    if (v.type == VALUE_DB && v.data.db_val) {
+        db_retain(v.data.db_val);
         return v;
     }
     return v;
@@ -129,6 +180,9 @@ void value_free(Value v) {
     if (v.type == VALUE_ARRAY && v.data.array_val) {
         array_release(v.data.array_val);
     }
+    if (v.type == VALUE_DB && v.data.db_val) {
+        db_release(v.data.db_val);
+    }
 }
 
 int value_to_int(Value v) {
@@ -137,6 +191,7 @@ int value_to_int(Value v) {
         case VALUE_BOOL: return v.data.bool_val ? 1 : 0;
         case VALUE_STRING: return atoi(v.data.string_val);
         case VALUE_ARRAY: return v.data.array_val ? v.data.array_val->length : 0;
+        case VALUE_DB: return v.data.db_val && v.data.db_val->handle ? 1 : 0;
         case VALUE_NULL: return 0;
     }
     return 0;
@@ -158,6 +213,8 @@ char* value_to_string(Value v) {
                 return buffer;
             }
             return "array(len=0)";
+        case VALUE_DB:
+            return v.data.db_val && v.data.db_val->handle ? "db(open)" : "db(closed)";
         case VALUE_NULL:
             return "null";
     }
@@ -170,6 +227,7 @@ int value_to_bool(Value v) {
         case VALUE_BOOL: return v.data.bool_val;
         case VALUE_STRING: return strlen(v.data.string_val) > 0;
         case VALUE_ARRAY: return v.data.array_val && v.data.array_val->length > 0;
+        case VALUE_DB: return v.data.db_val && v.data.db_val->handle;
         case VALUE_NULL: return 0;
     }
     return 0;

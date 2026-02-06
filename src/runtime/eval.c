@@ -1,6 +1,7 @@
 #include "runtime/eval.h"
 #include "runtime/interpreter_internal.h"
 #include "runtime/io.h"
+#include "runtime/sqlite.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -256,6 +257,122 @@ static Value eval_call(Interpreter *interp, ASTNode *node) {
         return arr->items[arr->length];
     }
 
+    if (strcmp(node->data.call.name, "sqlite_open") == 0) {
+        if (node->data.call.arg_count != 1) {
+            fprintf(stderr, "Runtime Error: Line %d:%d: sqlite_open() expects 1 argument: path\n",
+                    node->line, node->column);
+            return value_create_null();
+        }
+
+        Value path_val = eval_node_inner(interp, node->data.call.args[0]);
+        const char *path = value_to_string(path_val);
+        char *error_message = NULL;
+        DbValue *db = sqlite_open_handle(path, &error_message);
+        value_free(path_val);
+
+        if (!db) {
+            fprintf(stderr, "Runtime Error: Line %d:%d: sqlite_open() failed: %s\n",
+                    node->line, node->column, error_message ? error_message : "unknown error");
+            if (error_message) free(error_message);
+            return value_create_null();
+        }
+
+        if (error_message) free(error_message);
+        return value_create_db(db);
+    }
+
+    if (strcmp(node->data.call.name, "sqlite_close") == 0) {
+        if (node->data.call.arg_count != 1) {
+            fprintf(stderr, "Runtime Error: Line %d:%d: sqlite_close() expects 1 argument: db\n",
+                    node->line, node->column);
+            return value_create_null();
+        }
+
+        Value db_val = eval_node_inner(interp, node->data.call.args[0]);
+        if (db_val.type != VALUE_DB || !db_val.data.db_val) {
+            value_free(db_val);
+            fprintf(stderr, "Runtime Error: Line %d:%d: sqlite_close() expects a db handle\n",
+                    node->line, node->column);
+            return value_create_null();
+        }
+
+        char *error_message = NULL;
+        int rc = sqlite_close_handle(db_val.data.db_val, &error_message);
+        value_free(db_val);
+
+        if (rc != 0) {
+            fprintf(stderr, "Runtime Error: Line %d:%d: sqlite_close() failed: %s\n",
+                    node->line, node->column, error_message ? error_message : "unknown error");
+        }
+        if (error_message) free(error_message);
+        return value_create_int(rc);
+    }
+
+    if (strcmp(node->data.call.name, "sqlite_exec") == 0) {
+        if (node->data.call.arg_count != 2) {
+            fprintf(stderr, "Runtime Error: Line %d:%d: sqlite_exec() expects 2 arguments: db, sql\n",
+                    node->line, node->column);
+            return value_create_null();
+        }
+
+        Value db_val = eval_node_inner(interp, node->data.call.args[0]);
+        Value sql_val = eval_node_inner(interp, node->data.call.args[1]);
+        if (db_val.type != VALUE_DB || !db_val.data.db_val) {
+            value_free(db_val);
+            value_free(sql_val);
+            fprintf(stderr, "Runtime Error: Line %d:%d: sqlite_exec() expects a db handle\n",
+                    node->line, node->column);
+            return value_create_null();
+        }
+
+        const char *sql = value_to_string(sql_val);
+        char *error_message = NULL;
+        int rc = sqlite_exec_sql(db_val.data.db_val, sql, &error_message);
+        value_free(db_val);
+        value_free(sql_val);
+
+        if (rc != 0) {
+            fprintf(stderr, "Runtime Error: Line %d:%d: sqlite_exec() failed: %s\n",
+                    node->line, node->column, error_message ? error_message : "unknown error");
+        }
+        if (error_message) free(error_message);
+        return value_create_int(rc);
+    }
+
+    if (strcmp(node->data.call.name, "sqlite_query") == 0) {
+        if (node->data.call.arg_count != 2) {
+            fprintf(stderr, "Runtime Error: Line %d:%d: sqlite_query() expects 2 arguments: db, sql\n",
+                    node->line, node->column);
+            return value_create_null();
+        }
+
+        Value db_val = eval_node_inner(interp, node->data.call.args[0]);
+        Value sql_val = eval_node_inner(interp, node->data.call.args[1]);
+        if (db_val.type != VALUE_DB || !db_val.data.db_val) {
+            value_free(db_val);
+            value_free(sql_val);
+            fprintf(stderr, "Runtime Error: Line %d:%d: sqlite_query() expects a db handle\n",
+                    node->line, node->column);
+            return value_create_null();
+        }
+
+        const char *sql = value_to_string(sql_val);
+        char *error_message = NULL;
+        ArrayValue *rows = sqlite_query_sql(db_val.data.db_val, sql, &error_message);
+        value_free(db_val);
+        value_free(sql_val);
+
+        if (!rows) {
+            fprintf(stderr, "Runtime Error: Line %d:%d: sqlite_query() failed: %s\n",
+                    node->line, node->column, error_message ? error_message : "unknown error");
+            if (error_message) free(error_message);
+            return value_create_null();
+        }
+
+        if (error_message) free(error_message);
+        return value_create_array(rows);
+    }
+
     Function *func = interp_find_function(interp, node->data.call.name);
 
     if (!func) {
@@ -502,6 +619,8 @@ static Value eval_node_inner(Interpreter *interp, ASTNode *node) {
             if (var->value.type == VALUE_STRING) {
                 result = value_create_string(var->value.data.string_val);
             } else if (var->value.type == VALUE_ARRAY) {
+                result = value_copy(var->value);
+            } else if (var->value.type == VALUE_DB) {
                 result = value_copy(var->value);
             } else {
                 result = var->value;

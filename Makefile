@@ -17,15 +17,17 @@ SOURCES = $(SRCDIR)/main.c \
 	$(SRCDIR)/runtime/interpreter.c \
 	$(SRCDIR)/runtime/eval.c \
 	$(SRCDIR)/runtime/value.c \
-	$(SRCDIR)/runtime/io.c
+	$(SRCDIR)/runtime/io.c \
+	$(SRCDIR)/runtime/sqlite.c
 OBJECTS = $(patsubst $(SRCDIR)/%.c,$(OBJDIR)/%.o,$(SOURCES))
 EXECUTABLE = $(BINDIR)/yap
 
 all: $(EXECUTABLE)
 
+
 $(EXECUTABLE): $(OBJECTS)
 	@mkdir -p $(BINDIR)
-	$(CC) $(CFLAGS) $(OBJECTS) -o $@
+	$(CC) $(CFLAGS) $(OBJECTS) -lsqlite3 -o $@
 	@echo "Build complete: $(EXECUTABLE)"
 
 $(OBJDIR)/%.o: $(SRCDIR)/%.c

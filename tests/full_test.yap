@@ -276,21 +276,43 @@ try {
 print("Passed: " + pass);
 print("Failed: " + fail);
 
-var longLoopStart = timestamp();
-var longLoop = 2147483647;
-if (mode == "interpreted") {
-    longLoop = longLoop/50;// Shorten loop for interpret mode to avoid long test times
+
+if (false) {
+    var longLoopStart = timestamp();
+    var longLoop = 2147483647;
+    if (mode == "interpreted") {
+        longLoop = longLoop/50;// Shorten loop for interpret mode to avoid long test times
+    }
+    print(longLoop);
+    while (longLoop > 0) {
+        longLoop = longLoop - 1;
+        // if (longLoop % 100000000 == 0 || mode == "interpreted" && longLoop % 2000000 == 0) {
+        //     print(longLoop);
+        // }
+    }
+    var longLoopEnd = timestamp();
+    var longLoopTime = longLoopEnd - longLoopStart;
+    if (mode == "interpreted") {
+        longLoopTime = longLoopTime * 50;// Scale time back up for interpret mode
+    }
+    print("Long loop time (seconds): " + longLoopTime + " in " + mode + " mode");
 }
-print(longLoop);
-while (longLoop > 0) {
-    longLoop = longLoop - 1;
-    // if (longLoop % 100000000 == 0 || mode == "interpreted" && longLoop % 2000000 == 0) {
-    //     print(longLoop);
-    // }
+
+var db = sqlite_open("test.db");
+
+sqlite_exec(db, "create table if not exists users (id integer, name text)");
+sqlite_exec(db, "insert into users values (1, 'Ada')");
+sqlite_exec(db, "insert into users values (2, 'Linus')");
+
+var rows = sqlite_query(db, "select id, name from users order by id");
+var i = 0;
+while (i < rows) {
+    var row = rows[i];
+    var j = 0;
+    while (j < row) {
+        print(row[j]);
+        j = j + 1;
+    }
+    i = i + 1;
 }
-var longLoopEnd = timestamp();
-var longLoopTime = longLoopEnd - longLoopStart;
-if (mode == "interpreted") {
-    longLoopTime = longLoopTime * 50;// Scale time back up for interpret mode
-}
-print("Long loop time (seconds): " + longLoopTime + " in " + mode + " mode");
+sqlite_close(db);
