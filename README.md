@@ -1,42 +1,106 @@
 # YAP Language - Yet Another Programming Language
 
-A simple yet functional programming language written in C that can be compiled and executed. YAP serves as an educational example of how to build a programming language from scratch.
+YAP is a small programming language written in C with both an interpreter and a native compiler. It is designed as an educational project, but it supports a practical set of features including arrays, imports, exceptions, and file IO.
 
-## Project Structure
+## Project Layout
 
 ```
 ├── src/
-│   ├── main.c           # Main entry point
-│   ├── lexer.h/c        # Tokenization
-│   ├── parser.h/c       # Parse tokens into AST
-│   ├── ast.h/c          # Abstract Syntax Tree definitions
-│   └── interpreter.h/c  # Execution engine
-├── examples/            # Example YAP programs
-├── Makefile            # Build configuration
-└── README.md           # This file
+│   ├── main.c                    # CLI entry, interpreter, compiler front door
+│   ├── lexer.h/c                 # Tokenization
+│   ├── parser.h/c                # Recursive descent parser
+│   ├── ast.h/c                   # AST nodes
+│   ├── compiler/                 # Native codegen (x86_64)
+│   │   ├── compiler.h/c           # Compile entry + driver
+│   │   ├── analysis.h/c           # Semantic analysis and type inference
+│   │   ├── codegen_ctx.h/c        # Codegen state and helpers
+│   │   ├── emit.h                 # Codegen interface
+│   │   ├── emit_expr.c            # Expression emission
+│   │   ├── emit_stmt.c            # Statement emission
+│   │   └── emit_runtime.h/c       # Runtime stubs for compiled output
+│   └── runtime/                  # Interpreter runtime + built-ins
+│       ├── interpreter.h/c        # Tree-walk interpreter
+│       ├── interpreter_internal.h # Internal interpreter helpers
+│       ├── eval.h/c               # Expression evaluation
+│       ├── io.h/c                 # File IO built-ins
+│       └── value.h/c              # Runtime value system
+├── std/                          # Standard library in YAP (e.g. Math.yap)
+├── tests/                        # Feature tests and helpers
+├── bin/                          # Built output
+├── build.bat / Makefile          # Build scripts
+└── yap-language-extension/       # VS Code syntax highlighting
 ```
 
-## Features
+## Build
 
-YAP supports:
-- **Variables**: `var x = 10;`
-- **Data Types**: Integers, Strings, Booleans
-- **Arithmetic**: `+`, `-`, `*`, `/`, `%`
-- **Comparison**: `<`, `<=`, `>`, `>=`, `==`, `!=`
-- **Logical Operations**: `&&`, `||`, `!`
-- **Conditionals**: `if`/`else` statements
-- **Loops**: `while` loops
-- **Functions**: Function declarations with parameters and return values
-- **Output**: `print()` function for console output
-- **Comments**: `// Single line comments`
-- **String Concatenation**: Using the `+` operator
-- **Imports**: Import exported functions from other YAP files
+### Linux/macOS
 
-## Standard Library
+```bash
+make
+```
 
-YAP includes a small standard library written in YAP itself. For example, Math helpers live in `std/Math`.
+### Windows (MinGW)
 
-Example:
+```bash
+build.bat
+```
+
+Build output is [bin/yap](bin/yap) (or [bin/yap.exe](bin/yap.exe) on Windows).
+
+## Run
+
+### Interactive REPL
+
+```bash
+./bin/yap
+```
+
+### Run a file
+
+```bash
+./bin/yap ./tests/basic.yap
+```
+
+### Pass program arguments
+
+```bash
+./bin/yap ./tests/full_test.yap hello world interpreted
+```
+
+In YAP, `args` is an array of the extra CLI arguments (strings).
+
+## Compile (native)
+
+Native compilation generates x86_64 assembly and links it with `gcc`.
+
+```bash
+./bin/yap --compile ./tests/full_test.yap -o full_test.out
+./full_test.out hello world compiled
+```
+
+Notes:
+- Compile mode uses `gcc` to link.
+- Compile mode is not supported on Windows yet.
+
+## Language Features
+
+Core syntax:
+- Variables with `var`
+- Integers, strings, booleans, null
+- Arithmetic and comparisons
+- `if` / `else`, `while`
+- Functions with `fn` and `return`
+- Arrays and indexing: `[1, 2, 3]`, `arr[0]`
+- Imports and exports
+- Exceptions: `try` / `catch` / `finally`, `throw`
+
+Built-ins:
+- `print(value)`
+- `read(filename)`, `write(filename, content)`, `append(filename, content)`
+- `push(array, value)`, `pop(array)`
+- `random()`, `timestamp()`
+
+Example (imports + stdlib):
 
 ```
 import { abs, pow, gcd } from "std/Math";
@@ -46,218 +110,35 @@ print(pow(2, 8));
 print(gcd(54, 24));
 ```
 
-## Building
+## Standard Library
 
-### On Linux/macOS:
+The standard library lives under [std/](std/), currently with math helpers in [std/Math.yap](std/Math.yap).
 
-```bash
-cd YAP-Language
-make
-```
+Import paths can be:
+- `std/Math` (stdlib)
+- Relative paths like `tests/math_utils.yap`
 
-This creates a `bin/yap` executable.
+To override stdlib resolution, set `YAP_STD_PATH` to a folder containing std modules.
 
-### On Windows (with GCC/MinGW):
+## Tests
 
-```bash
-cd YAP-Language
-mingw32-make
-```
-
-## Usage
-
-### Interactive Mode
-
-Run without arguments for interactive mode:
+### Linux/macOS
 
 ```bash
-./bin/yap
+./tests/run.bash
 ```
 
-Then type YAP code directly:
+### Windows (PowerShell)
 
-```
-> var x = 5;
-> print(x);
-5
->
+```powershell
+./tests/run.ps1
 ```
 
-### File Mode
+The full language smoke test is [tests/full_test.yap](tests/full_test.yap).
 
-Execute a YAP program from a file:
+## Editor Support
 
-```bash
-./bin/yap examples/basic.yap
-```
-
-## Language Syntax
-
-### Variable Declaration
-
-```
-var variableName = value;
-```
-
-Example:
-```
-var x = 42;
-var name = "Alice";
-var flag = true;
-```
-
-Variables can be reassigned:
-```
-x = 100;
-```
-
-### Functions
-
-Define functions with the `fn` keyword:
-
-```
-fn functionName(param1, param2) {
-    return param1 + param2;
-}
-```
-
-Example:
-```
-fn add(a, b) {
-    return a + b;
-}
-
-var result = add(5, 3);
-print(result);  // Output: 8
-```
-
-### Control Flow
-
-#### If/Else
-
-```
-if (condition) {
-    // code
-} else {
-    // code
-}
-```
-
-Example:
-```
-var x = 10;
-if (x > 5) {
-    print("x is greater than 5");
-} else {
-    print("x is 5 or less");
-}
-```
-
-#### While Loops
-
-```
-while (condition) {
-    // code
-}
-```
-
-Example:
-```
-var i = 0;
-while (i < 5) {
-    print(i);
-    i = i + 1;
-}
-```
-
-### Print Statement
-
-Output values using `print()`:
-
-```
-print("Hello, World!");
-print(42);
-print(true);
-```
-
-### Comments
-
-Single-line comments start with `//`:
-
-```
-// This is a comment
-var x = 5;  // Initialize x
-```
-
-## Examples
-
-### Basic Arithmetic
-
-```
-var x = 10;
-var y = 20;
-print(x + y);  // 30
-print(x * y);  // 200
-print(y - x);  // 10
-print(y / x);  // 2
-```
-
-See [examples/basic.yap](examples/basic.yap)
-
-### Functions and Recursion
-
-```
-fn factorial(n) {
-    if (n <= 1) {
-        return 1;
-    } else {
-        return n * factorial(n - 1);
-    }
-}
-
-print(factorial(5));  // 120
-```
-
-See [examples/functions.yap](examples/functions.yap)
-
-### String Operations
-
-```
-var greeting = "Hello" + " " + "World";
-print(greeting);  // Hello World
-```
-
-## Implementation Details
-
-### Lexer
-Tokenizes the source code into a stream of tokens. Handles identifiers, keywords, literals, and operators.
-
-### Parser
-Builds an Abstract Syntax Tree (AST) from the token stream using recursive descent parsing. Implements operator precedence for correct expression evaluation.
-
-### Interpreter
-Executes the AST through tree-walking interpretation. Manages variable scopes, function definitions, and program state.
-
-### Data Types
-
-- **Integer (int)**: 32-bit signed integers
-- **String**: Text strings with concatenation support
-- **Boolean (bool)**: true/false values
-- **Null**: Default uninitialized value
-
-## Future Enhancements
-
-Ideas for extending YAP:
-- [ ] Arrays and data structures
-- [ ] Classes/structs
-- [ ] More built-in functions
-- [ ] Error handling with try/catch
-- [ ] For loops
-- [ ] Switch statements
-- [ ] Floating-point numbers
-- [ ] File I/O
-- [ ] Standard library
-- [ ] Better error messages with line numbers
+VS Code syntax highlighting lives in [yap-language-extension/](yap-language-extension/). You can open that folder and package it as an extension or load it as an unpacked extension.
 
 ## License
 

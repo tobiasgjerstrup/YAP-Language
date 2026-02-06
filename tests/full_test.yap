@@ -255,7 +255,7 @@ fn fnThatThrows() {
 
 try {
     throw "boom";
-    fail = fail + 1; // Should not reach here
+    fail = fail + 1;// Should not reach here
 } catch (e) {
     ok = assert_eq_str(e, "boom", "catch exception");
     pass = pass + ok;
@@ -265,7 +265,7 @@ try {
 
 try {
     fnThatThrows();
-    fail = fail + 1; // Should not reach here
+    fail = fail + 1;// Should not reach here
 } catch (e) {
     ok = assert_eq_str(e, "boom function!", "catch exception from function");
     pass = pass + ok;
@@ -279,18 +279,18 @@ print("Failed: " + fail);
 var longLoopStart = timestamp();
 var longLoop = 2147483647;
 if (mode == "interpreted") {
-    longLoop = longLoop/50; // Shorten loop for interpret mode to avoid long test times
+    longLoop = longLoop/50;// Shorten loop for interpret mode to avoid long test times
 }
 print(longLoop);
 while (longLoop > 0) {
     longLoop = longLoop - 1;
     // if (longLoop % 100000000 == 0 || mode == "interpreted" && longLoop % 2000000 == 0) {
-        //     print(longLoop);
-        // }
-    }
-    var longLoopEnd = timestamp();
-    var longLoopTime = longLoopEnd - longLoopStart;
-    if (mode == "interpreted") {
-        longLoopTime = longLoopTime * 50; // Scale time back up for interpret mode
-    }
-    print("Long loop time (seconds): " + longLoopTime + " in " + mode + " mode");
+    //     print(longLoop);
+    // }
+}
+var longLoopEnd = timestamp();
+var longLoopTime = longLoopEnd - longLoopStart;
+if (mode == "interpreted") {
+    longLoopTime = longLoopTime * 50;// Scale time back up for interpret mode
+}
+print("Long loop time (seconds): " + longLoopTime + " in " + mode + " mode");
