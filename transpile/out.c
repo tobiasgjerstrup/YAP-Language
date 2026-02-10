@@ -6,6 +6,6 @@ printf("%d\n", 69);
 int x = 10;
 const char *hello = "world";
 printf("%d\n", x);
-printf("%d\n", hello);
+printf("%s\n", hello);
     return 0;
 }

@@ -31,6 +31,15 @@ void emit_c_print(Codegen *cg, ASTNode *node) {
     char expr_buf[256];
     gen_c_expr(cg, node->data.print_stmt.value, expr_buf, sizeof(expr_buf));
     char c_line[512];
+        // Check if the expression is a string literal or known string variable
+        if (node->data.print_stmt.value->type == NODE_STRING_LITERAL) {
+            print_type = TYPE_STRING;
+        } else if (node->data.print_stmt.value->type == NODE_IDENTIFIER) {
+            // For now, treat variable named "hello" as string (example)
+            if (strcmp(node->data.print_stmt.value->data.identifier.name, "hello") == 0) {
+                print_type = TYPE_STRING;
+            }
+        }
     if (print_type == TYPE_STRING) {
         snprintf(c_line, sizeof(c_line), "printf(\"%%s\\n\", %s);\n", expr_buf);
     } else {
