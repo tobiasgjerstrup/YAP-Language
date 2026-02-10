@@ -17,6 +17,12 @@ void transpile_stmt_to_c(Codegen *cg, ASTNode *node) {
         case NODE_PRINT_STMT:
             emit_c_print(cg, node);
             break;
+        case NODE_VAR_DECL:
+            emit_c_var_decl(cg, node);
+            break;
+        case NODE_ASSIGNMENT:
+            emit_c_assignment(cg, node);
+            break;
         // ... handle other statement types ...
         default:
             // Not implemented

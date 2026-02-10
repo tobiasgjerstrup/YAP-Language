@@ -4,6 +4,27 @@
 #include <string.h>
 #include <stdarg.h>
 
+// Transpile YAP variable assignment to C
+void emit_c_assignment(Codegen *cg, ASTNode *node) {
+    char expr_buf[256];
+    gen_c_expr(cg, node->data.assignment.value, expr_buf, sizeof(expr_buf));
+    emit_c(cg, "%s = %s;\n", node->data.assignment.name, expr_buf);
+}
+// Transpile YAP variable declaration to C
+void emit_c_var_decl(Codegen *cg, ASTNode *node) {
+    // For now, only handle int and string literals
+    char expr_buf[256];
+    gen_c_expr(cg, node->data.var_decl.value, expr_buf, sizeof(expr_buf));
+    // TODO: Type inference, for now assume int if literal, string if literal
+    if (node->data.var_decl.value->type == NODE_INT_LITERAL) {
+        emit_c(cg, "int %s = %s;\n", node->data.var_decl.name, expr_buf);
+    } else if (node->data.var_decl.value->type == NODE_STRING_LITERAL) {
+        emit_c(cg, "const char *%s = %s;\n", node->data.var_decl.name, expr_buf);
+    } else {
+        emit_c(cg, "/* unsupported var type */\n");
+    }
+}
+
 // Minimal C code emitter for transpiling YAP print() to C
 void emit_c_print(Codegen *cg, ASTNode *node) {
     VarType print_type = expr_is_string(cg, node->data.print_stmt.value);
