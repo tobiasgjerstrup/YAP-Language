@@ -1,9 +1,47 @@
+
+#include <stddef.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include "compiler/compiler.h"
 #include "compiler/analysis.h"
 #include "compiler/emit.h"
 #include "compiler/emit_runtime.h"
-#include <stdlib.h>
-#include <string.h>
+#include "compiler/codegen_ctx.h"
+#include "ast.h"
+
+// Example stub for transpiling print statements to C
+void transpile_stmt_to_c(Codegen *cg, ASTNode *node) {
+    if (!node) return;
+    switch (node->type) {
+        case NODE_PRINT_STMT:
+            emit_c_print(cg, node);
+            break;
+        // ... handle other statement types ...
+        default:
+            // Not implemented
+            break;
+    }
+}
+
+// Transpile a YAP program to C (minimal: only print statements)
+int compiler_transpile_to_c(ASTNode *program, const char *output_path, char *error, size_t error_size) {
+    FILE *out = fopen(output_path ? output_path : "out.c", "w");
+    if (!out) {
+        if (error && error_size) snprintf(error, error_size, "Failed to open output file '%s'", output_path);
+        return 1;
+    }
+    fprintf(out, "#include <stdio.h>\n\nint main() {\n");
+    Codegen cg = {0};
+    cg.out = out;
+    // Only handle top-level statements for now
+    for (int i = 0; i < program->statement_count; i++) {
+        transpile_stmt_to_c(&cg, program->statements[i]);
+    }
+    fprintf(out, "    return 0;\n}\n");
+    fclose(out);
+    return 0;
+}
 
 static int emit_assembly(Codegen *cg, ASTNode *program, const char *asm_path) {
     cg->out = fopen(asm_path, "w");

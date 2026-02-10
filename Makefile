@@ -14,6 +14,7 @@ SOURCES = $(SRCDIR)/main.c \
 	$(SRCDIR)/compiler/emit_expr.c \
 	$(SRCDIR)/compiler/emit_stmt.c \
 	$(SRCDIR)/compiler/emit_runtime.c \
+	$(SRCDIR)/compiler/emit_c.c \
 	$(SRCDIR)/runtime/interpreter.c \
 	$(SRCDIR)/runtime/eval.c \
 	$(SRCDIR)/runtime/value.c \

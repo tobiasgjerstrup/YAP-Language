@@ -563,6 +563,7 @@ void run_interactive() {
 
 int main(int argc, char *argv[]) {
     int compile_mode = 0;
+    int transpile_c_mode = 0;
     const char *input_path = NULL;
     const char *output_path = NULL;
     int args_start = -1;
@@ -570,6 +571,8 @@ int main(int argc, char *argv[]) {
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--compile") == 0) {
             compile_mode = 1;
+        } else if (strcmp(argv[i], "--transpile-c") == 0) {
+            transpile_c_mode = 1;
         } else if (strcmp(argv[i], "-o") == 0) {
             if (i + 1 < argc) {
                 output_path = argv[++i];
@@ -583,6 +586,37 @@ int main(int argc, char *argv[]) {
             args_start = i;
             break;
         }
+    }
+
+    if (transpile_c_mode) {
+        if (!input_path || args_start != -1) {
+            fprintf(stderr, "Usage: %s --transpile-c [filename] [-o output]\n", argv[0]);
+            return 1;
+        }
+
+        char *source = read_file(input_path);
+        if (!source) return 1;
+
+        Parser *parser = parser_create(source);
+        ASTNode *program = parser_parse(parser);
+        if (parser->error) {
+            fprintf(stderr, "Parse error: %s\n", parser->error_msg);
+            parser_destroy(parser);
+            free(source);
+            return 1;
+        }
+
+        char error[256];
+        int rc = compiler_transpile_to_c(program, output_path ? output_path : "out.c", error, sizeof(error));
+        if (rc != 0) {
+            fprintf(stderr, "Transpile error: %s\n", error);
+        }
+
+        ast_free(program);
+        parser_destroy(parser);
+        free(source);
+
+        return rc != 0 ? 1 : 0;
     }
 
     if (compile_mode) {
