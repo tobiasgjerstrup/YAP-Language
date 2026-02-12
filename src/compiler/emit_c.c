@@ -98,8 +98,18 @@ void emit_c(Codegen *cg, const char *fmt, ...) {
 
 // Minimal stub for generating C code for an expression
 void gen_c_expr(Codegen *cg, ASTNode *expr, char *buf, size_t buflen) {
-    // For now, just handle literals and variable names
     switch (expr->type) {
+        case NODE_CALL: {
+            char args_buf[256] = "";
+            for (int i = 0; i < expr->data.call.arg_count; i++) {
+                char arg[64];
+                gen_c_expr(cg, expr->data.call.args[i], arg, sizeof(arg));
+                strcat(args_buf, arg);
+                if (i < expr->data.call.arg_count - 1) strcat(args_buf, ", ");
+            }
+            snprintf(buf, buflen, "%s(%s)", expr->data.call.name, args_buf);
+            break;
+        }
         case NODE_INT_LITERAL:
             snprintf(buf, buflen, "%d", expr->data.int_literal.value);
             break;

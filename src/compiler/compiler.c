@@ -14,6 +14,34 @@
 void transpile_stmt_to_c(Codegen *cg, ASTNode *node) {
     if (!node) return;
     switch (node->type) {
+        case NODE_FUNC_DECL: {
+            // Emit function signature
+            emit_c(cg, "int %s(", node->data.func_decl.name);
+            for (int i = 0; i < node->data.func_decl.param_count; i++) {
+                emit_c(cg, "int %s%s", node->data.func_decl.params[i], (i < node->data.func_decl.param_count - 1) ? ", " : "");
+            }
+            emit_c(cg, ") {\n");
+            transpile_stmt_to_c(cg, node->data.func_decl.body);
+            emit_c(cg, "}\n");
+            break;
+        }
+        case NODE_RETURN_STMT: {
+            char expr_buf[256];
+            gen_c_expr(cg, node->data.return_stmt.value, expr_buf, sizeof(expr_buf));
+            emit_c(cg, "return %s;\n", expr_buf);
+            break;
+        }
+        case NODE_CALL: {
+            // Only support calls as statements for now
+            emit_c(cg, "%s(", node->data.call.name);
+            for (int i = 0; i < node->data.call.arg_count; i++) {
+                char arg_buf[128];
+                gen_c_expr(cg, node->data.call.args[i], arg_buf, sizeof(arg_buf));
+                emit_c(cg, "%s%s", arg_buf, (i < node->data.call.arg_count - 1) ? ", " : "");
+            }
+            emit_c(cg, ");\n");
+            break;
+        }
         case NODE_WHILE_STMT: {
             char cond_buf[256];
             gen_c_expr(cg, node->data.while_stmt.condition, cond_buf, sizeof(cond_buf));
@@ -74,12 +102,22 @@ int compiler_transpile_to_c(ASTNode *program, const char *output_path, char *err
         if (error && error_size) snprintf(error, error_size, "Failed to open output file '%s'", output_path);
         return 1;
     }
-    fprintf(out, "#include <stdio.h>\n\nint main() {\n");
+    fprintf(out, "#include <stdio.h>\n\n");
     Codegen cg = {0};
     cg.out = out;
-    // Only handle top-level statements for now
+    // Emit all function definitions first
     for (int i = 0; i < program->statement_count; i++) {
-        transpile_stmt_to_c(&cg, program->statements[i]);
+        ASTNode *stmt = program->statements[i];
+        if (stmt && stmt->type == NODE_FUNC_DECL) {
+            transpile_stmt_to_c(&cg, stmt);
+        }
+    }
+    // Emit main function and all non-function statements
+    fprintf(out, "int main() {\n");
+    for (int i = 0; i < program->statement_count; i++) {
+        ASTNode *stmt = program->statements[i];
+        if (!stmt || stmt->type == NODE_FUNC_DECL) continue;
+        transpile_stmt_to_c(&cg, stmt);
     }
     fprintf(out, "    return 0;\n}\n");
     fclose(out);

@@ -1,5 +1,8 @@
 #include <stdio.h>
 
+int helloThere() {
+printf("%s\n", "hello there!");
+}
 int main() {
 printf("%s\n", "hello world");
 printf("%d\n", 69);
@@ -38,5 +41,6 @@ if (longLoop % 100000000 == 0) {
 printf("%d\n", longLoop);
 }
 }
+helloThere();
     return 0;
 }

@@ -44,3 +44,9 @@ while (longLoop > 0) {
 // var longLoopTime = longLoopEnd - longLoopStart;
 // print("Long loop time (seconds): " + longLoopTime);
 // }
+
+fn helloThere() {
+    print("hello there!");
+}
+
+helloThere();
