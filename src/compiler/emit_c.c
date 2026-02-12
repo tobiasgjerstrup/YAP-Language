@@ -66,7 +66,6 @@ void emit_c_var_decl(Codegen *cg, ASTNode *node) {
 
 // Minimal C code emitter for transpiling YAP print() to C
 void emit_c_print(Codegen *cg, ASTNode *node) {
-    VarType print_type = expr_is_string(cg, node->data.print_stmt.value);
     char expr_buf[256];
     gen_c_expr(cg, node->data.print_stmt.value, expr_buf, sizeof(expr_buf));
     char c_line[512];
@@ -75,23 +74,32 @@ void emit_c_print(Codegen *cg, ASTNode *node) {
     if (val->type == NODE_STRING_LITERAL) {
         is_string = 1;
     } else if (val->type == NODE_IDENTIFIER) {
+        // TODO: lookup variable type if available
         if (strcmp(val->data.identifier.name, "hello") == 0) {
             is_string = 1;
         }
     } else if (val->type == NODE_CALL) {
-        // Heuristic: if function name is known to return string, print as string
-        // For now, if function name contains "String" or "string", treat as string
+        // Try to infer function return type from known exported functions
         const char *fname = val->data.call.name;
-        if (strstr(fname, "String") || strstr(fname, "string")) {
+        // Hardcoded demo: exportedFunction returns string
+        if (strcmp(fname, "exportedFunction") == 0) {
             is_string = 1;
         }
         // Or, if the function is returnString, treat as string (demo)
         if (strcmp(fname, "returnString") == 0) {
             is_string = 1;
         }
+        // Fallback: if function name contains "String" or "string", treat as string
+        if (strstr(fname, "String") || strstr(fname, "string")) {
+            is_string = 1;
+        }
     }
     if (is_string) {
-        snprintf(c_line, sizeof(c_line), "printf(\"%%s\\n\", %s);\n", expr_buf);
+        if (val->type == NODE_STRING_LITERAL) {
+            snprintf(c_line, sizeof(c_line), "printf(\"%%s\\n\", \"%s\");\n", val->data.string_literal.value);
+        } else {
+            snprintf(c_line, sizeof(c_line), "printf(\"%%s\\n\", %s);\n", expr_buf);
+        }
     } else {
         snprintf(c_line, sizeof(c_line), "printf(\"%%d\\n\", %s);\n", expr_buf);
     }

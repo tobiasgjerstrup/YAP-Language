@@ -367,12 +367,22 @@ int process_imports(ASTNode *program, ASTNode ***imported_functions, int *import
         
         if (stmt->type == NODE_IMPORT) {
             // Load and parse the imported module
-            char *import_path = stmt->data.import_stmt.module_path;
-            // fprintf(stderr, "Importing from: %s\n", import_path);
-            
-            char *source = read_file(import_path);
+            // Resolve import path relative to base_dir
+            char resolved_path[512];
+            // If module path starts with './', join with base_dir
+            const char *mod = stmt->data.import_stmt.module_path;
+            if (strncmp(mod, "./", 2) == 0) {
+                snprintf(resolved_path, sizeof(resolved_path), "%s/%s", base_dir, mod+2);
+            } else if (mod[0] == '/') {
+                // Absolute path, use as-is
+                snprintf(resolved_path, sizeof(resolved_path), "%s", mod);
+            } else {
+                snprintf(resolved_path, sizeof(resolved_path), "%s/%s", base_dir, mod);
+            }
+            // fprintf(stderr, "Importing from: %s\n", resolved_path);
+            char *source = read_file(resolved_path);
             if (!source) {
-                fprintf(stderr, "Error: Could not load imported module '%s'\n", import_path);
+                fprintf(stderr, "Error: Could not load imported module '%s'\n", resolved_path);
                 return 1;
             }
             
@@ -380,7 +390,7 @@ int process_imports(ASTNode *program, ASTNode ***imported_functions, int *import
             ASTNode *imported_program = parser_parse(import_parser);
             
             if (import_parser->error) {
-                fprintf(stderr, "Parse error in imported module '%s': %s\n", import_path, import_parser->error_msg);
+                fprintf(stderr, "Parse error in imported module '%s': %s\n", resolved_path, import_parser->error_msg);
                 parser_destroy(import_parser);
                 free(source);
                 return 1;
@@ -604,6 +614,31 @@ int main(int argc, char *argv[]) {
             parser_destroy(parser);
             free(source);
             return 1;
+        }
+
+        // Extract directory from input_path for import resolution
+        char base_dir[512];
+        const char *last_slash = strrchr(input_path, '/');
+        if (!last_slash) last_slash = strrchr(input_path, '\\');
+        if (last_slash) {
+            size_t dir_len = last_slash - input_path;
+            strncpy(base_dir, input_path, dir_len);
+            base_dir[dir_len] = '\0';
+        } else {
+            strcpy(base_dir, ".");
+        }
+        ASTNode **imported_functions = NULL;
+        int imported_count = 0;
+        if (process_imports(program, &imported_functions, &imported_count, base_dir) != 0) {
+            fprintf(stderr, "Import processing failed\n");
+            ast_free(program);
+            parser_destroy(parser);
+            free(source);
+            return 1;
+        }
+        merge_imports(program, imported_functions, imported_count);
+        if (imported_functions) {
+            free(imported_functions);
         }
 
         char error[256];

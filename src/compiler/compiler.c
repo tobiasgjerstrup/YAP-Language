@@ -116,7 +116,20 @@ int compiler_transpile_to_c(ASTNode *program, const char *output_path, char *err
         if (error && error_size) snprintf(error, error_size, "Failed to open output file '%s'", output_path);
         return 1;
     }
-    fprintf(out, "#include <stdio.h>\n\n");
+    // Emit includes for imports
+    fprintf(out, "#include <stdio.h>\n");
+    for (int i = 0; i < program->statement_count; i++) {
+        ASTNode *stmt = program->statements[i];
+        if (stmt && stmt->type == NODE_IMPORT) {
+            const char *mod = stmt->data.import_stmt.module_path;
+            // if (strcmp(mod, "Math") == 0) {
+            //     fprintf(out, "#include <math.h>\n");
+            // } else {
+                fprintf(out, "#include \"%s.h\"\n", mod);
+            //}
+        }
+    }
+    fprintf(out, "\n");
     Codegen cg = {0};
     cg.out = out;
     // Emit all function definitions first
@@ -130,7 +143,7 @@ int compiler_transpile_to_c(ASTNode *program, const char *output_path, char *err
     fprintf(out, "int main() {\n");
     for (int i = 0; i < program->statement_count; i++) {
         ASTNode *stmt = program->statements[i];
-        if (!stmt || stmt->type == NODE_FUNC_DECL) continue;
+        if (!stmt || stmt->type == NODE_FUNC_DECL || stmt->type == NODE_IMPORT) continue;
         transpile_stmt_to_c(&cg, stmt);
     }
     fprintf(out, "    return 0;\n}\n");

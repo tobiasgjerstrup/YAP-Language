@@ -1,5 +1,8 @@
 #include <stdio.h>
 
+const char* exportedFunction() {
+return "exported value!";
+}
 void returnVoid() {
 printf("%s\n", "hello there!");
 }
@@ -50,5 +53,6 @@ printf("%d\n", longLoop);
 returnVoid();
 printf("%s\n", returnString());
 printf("%d\n", returnInt());
+printf("%s\n", exportedFunction());
     return 0;
 }

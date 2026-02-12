@@ -1,3 +1,5 @@
+import { exportedFunction } from "./exported.yap";
+
 print("hello world");
 print(69);
 
@@ -60,3 +62,4 @@ fn returnInt() {
 returnVoid();
 print(returnString());
 print(returnInt());
+print(exportedFunction());
