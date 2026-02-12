@@ -13,8 +13,19 @@
 // Example stub for transpiling print statements to C
 void transpile_stmt_to_c(Codegen *cg, ASTNode *node) {
     if (!node) return;
-    if (!node) return;
     switch (node->type) {
+        case NODE_WHILE_STMT: {
+            char cond_buf[256];
+            gen_c_expr(cg, node->data.while_stmt.condition, cond_buf, sizeof(cond_buf));
+            emit_c(cg, "while (%s) {\n", cond_buf);
+            if (node->data.while_stmt.body->type == NODE_BLOCK) {
+                transpile_stmt_to_c(cg, node->data.while_stmt.body);
+            } else {
+                transpile_stmt_to_c(cg, node->data.while_stmt.body);
+            }
+            emit_c(cg, "}\n");
+            break;
+        }
                 case NODE_BLOCK:
                     for (int i = 0; i < node->statement_count; i++) {
                         transpile_stmt_to_c(cg, node->statements[i]);

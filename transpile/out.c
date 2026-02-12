@@ -32,5 +32,11 @@ printf("%s\n", "x is not greater than y");
 }
 int longLoop = 2147483647;
 printf("%d\n", longLoop);
+while (longLoop > 0) {
+longLoop = longLoop - 1;
+if (longLoop % 100000000 == 0) {
+printf("%d\n", longLoop);
+}
+}
     return 0;
 }

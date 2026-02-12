@@ -36,9 +36,9 @@ var longLoop = 2147483647;
 print(longLoop);
 while (longLoop > 0) {
     longLoop = longLoop - 1;
-    // if (longLoop % 100000000 == 0 || mode == "interpreted" && longLoop % 2000000 == 0) {
-    //     print(longLoop);
-    // }
+    if (longLoop % 100000000 == 0) {
+        print(longLoop);
+    }
 }
 // var longLoopEnd = timestamp();
 // var longLoopTime = longLoopEnd - longLoopStart;
