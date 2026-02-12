@@ -138,7 +138,17 @@ void gen_c_expr(Codegen *cg, ASTNode *expr, char *buf, size_t buflen) {
                 strcat(args_buf, arg);
                 if (i < expr->data.call.arg_count - 1) strcat(args_buf, ", ");
             }
-            snprintf(buf, buflen, "%s(%s)", expr->data.call.name, args_buf);
+            // Check if function name should be prefixed (std/ import)
+            const char *fname = expr->data.call.name;
+            char prefixed_name[128];
+            // If function name matches any known std/ function, prefix it
+            // For now, hardcode pow as demo; ideally, track imported std/ functions
+            if (strcmp(fname, "pow") == 0) {
+                snprintf(prefixed_name, sizeof(prefixed_name), "YAP_STD_%s", fname);
+                snprintf(buf, buflen, "%s(%s)", prefixed_name, args_buf);
+            } else {
+                snprintf(buf, buflen, "%s(%s)", fname, args_buf);
+            }
             break;
         }
         case NODE_INT_LITERAL:

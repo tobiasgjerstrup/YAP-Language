@@ -368,21 +368,24 @@ int process_imports(ASTNode *program, ASTNode ***imported_functions, int *import
         if (stmt->type == NODE_IMPORT) {
             // Load and parse the imported module
             // Resolve import path relative to base_dir
-            char resolved_path[512];
-            // If module path starts with './', join with base_dir
             const char *mod = stmt->data.import_stmt.module_path;
-            if (strncmp(mod, "./", 2) == 0) {
+            char *source = NULL;
+            if (strncmp(mod, "std/", 4) == 0) {
+                // Use read_file directly for std/ imports (handles $YAP_STD_PATH)
+                source = read_file(mod);
+            } else if (strncmp(mod, "./", 2) == 0) {
+                char resolved_path[512];
                 snprintf(resolved_path, sizeof(resolved_path), "%s/%s", base_dir, mod+2);
+                source = read_file(resolved_path);
             } else if (mod[0] == '/') {
-                // Absolute path, use as-is
-                snprintf(resolved_path, sizeof(resolved_path), "%s", mod);
+                source = read_file(mod);
             } else {
+                char resolved_path[512];
                 snprintf(resolved_path, sizeof(resolved_path), "%s/%s", base_dir, mod);
+                source = read_file(resolved_path);
             }
-            // fprintf(stderr, "Importing from: %s\n", resolved_path);
-            char *source = read_file(resolved_path);
             if (!source) {
-                fprintf(stderr, "Error: Could not load imported module '%s'\n", resolved_path);
+                fprintf(stderr, "Error: Could not load imported module '%s'\n", mod);
                 return 1;
             }
             
@@ -390,7 +393,7 @@ int process_imports(ASTNode *program, ASTNode ***imported_functions, int *import
             ASTNode *imported_program = parser_parse(import_parser);
             
             if (import_parser->error) {
-                fprintf(stderr, "Parse error in imported module '%s': %s\n", resolved_path, import_parser->error_msg);
+                fprintf(stderr, "Parse error in imported module '%s': %s\n", mod, import_parser->error_msg);
                 parser_destroy(import_parser);
                 free(source);
                 return 1;
@@ -398,15 +401,16 @@ int process_imports(ASTNode *program, ASTNode ***imported_functions, int *import
             
             // If selective imports, track which functions to include
             int include_all = (stmt->data.import_stmt.import_count == 0);
-            
+            int is_std_import = (strncmp(mod, "std/", 4) == 0);
+
             // Collect exported functions
             if (imported_program && imported_program->type == NODE_PROGRAM) {
                 for (int j = 0; j < imported_program->statement_count; j++) {
                     ASTNode *imported_stmt = imported_program->statements[j];
-                    
+
                     if (imported_stmt->type == NODE_FUNC_DECL) {
                         int should_include = include_all;
-                        
+
                         // If selective import, check if this function is in the import list
                         if (!include_all) {
                             for (int k = 0; k < stmt->data.import_stmt.import_count; k++) {
@@ -416,11 +420,20 @@ int process_imports(ASTNode *program, ASTNode ***imported_functions, int *import
                                 }
                             }
                         }
-                        
+
                         if (should_include && imported_stmt->data.func_decl.is_exported) {
                             // Add a deep copy to imported functions
+                            ASTNode *copy = ast_copy_node(imported_stmt);
+                            // Prefix std/ function names to avoid C conflicts
+                            if (is_std_import) {
+                                size_t orig_len = strlen(copy->data.func_decl.name);
+                                char *prefixed = malloc(orig_len + 10); // "YAP_STD_" + null
+                                sprintf(prefixed, "YAP_STD_%s", copy->data.func_decl.name);
+                                free(copy->data.func_decl.name);
+                                copy->data.func_decl.name = prefixed;
+                            }
                             *imported_functions = realloc(*imported_functions, (*imported_count + 1) * sizeof(ASTNode*));
-                            (*imported_functions)[*imported_count] = ast_copy_node(imported_stmt);
+                            (*imported_functions)[*imported_count] = copy;
                             (*imported_count)++;
                         }
                     }

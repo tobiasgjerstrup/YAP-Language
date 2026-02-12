@@ -1,13 +1,22 @@
 #include <stdio.h>
 
-const char* exportedFunctionUwU() {
-return "exported value!";
+int YAP_STD_pow(int base, int exp) {
+if (exp < 0) {
+return 0;
+}
+int result = 1;
+int i = 0;
+while (i < exp) {
+result = result * base;
+i = i + 1;
+}
+return result;
 }
 const char* exportedFunction() {
 return "exported value!";
 }
 void returnVoid() {
-printf("%s\n", "helloo there!");
+printf("%s\n", "hello there!");
 }
 const char* returnString() {
 return "crazy string!";
@@ -16,14 +25,14 @@ int returnInt() {
 return 0;
 }
 int main() {
-printf("%s\n", "helloo world");
+printf("%s\n", "hello world");
 printf("%d\n", 69);
 int x = 10;
-const char *helloo = "helloo";
+const char *hello = "hello";
 printf("%d\n", x);
-printf("%s\n", helloo);
-helloo = "world!";
-printf("%s\n", helloo);
+printf("%s\n", hello);
+hello = "world!";
+printf("%s\n", hello);
 x = 20;
 int y = 5;
 printf("%d\n", x);
@@ -57,5 +66,6 @@ returnVoid();
 printf("%s\n", returnString());
 printf("%d\n", returnInt());
 printf("%s\n", exportedFunction());
+printf("%d\n", YAP_STD_pow(2, 8));
     return 0;
 }

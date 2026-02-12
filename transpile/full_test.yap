@@ -1,4 +1,5 @@
-import { exportedFunction } from "./exported.yap";
+import { exportedFunction} from "./exported.yap";
+import { pow } from "std/Math";
 
 print("hello world");
 print(69);
@@ -63,3 +64,4 @@ returnVoid();
 print(returnString());
 print(returnInt());
 print(exportedFunction());
+print(pow(2, 8));
