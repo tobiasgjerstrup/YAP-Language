@@ -13,7 +13,13 @@
 // Example stub for transpiling print statements to C
 void transpile_stmt_to_c(Codegen *cg, ASTNode *node) {
     if (!node) return;
+    if (!node) return;
     switch (node->type) {
+                case NODE_BLOCK:
+                    for (int i = 0; i < node->statement_count; i++) {
+                        transpile_stmt_to_c(cg, node->statements[i]);
+                    }
+                    break;
         case NODE_PRINT_STMT:
             emit_c_print(cg, node);
             break;
@@ -23,7 +29,27 @@ void transpile_stmt_to_c(Codegen *cg, ASTNode *node) {
         case NODE_ASSIGNMENT:
             emit_c_assignment(cg, node);
             break;
-        // ... handle other statement types ...
+        case NODE_IF_STMT: {
+            char cond_buf[256];
+            gen_c_expr(cg, node->data.if_stmt.condition, cond_buf, sizeof(cond_buf));
+            emit_c(cg, "if (%s) {\n", cond_buf);
+            if (node->data.if_stmt.then_branch->type == NODE_BLOCK) {
+                transpile_stmt_to_c(cg, node->data.if_stmt.then_branch);
+            } else {
+                transpile_stmt_to_c(cg, node->data.if_stmt.then_branch);
+            }
+            emit_c(cg, "}\n");
+            if (node->data.if_stmt.else_branch) {
+                emit_c(cg, "else {\n");
+                if (node->data.if_stmt.else_branch->type == NODE_BLOCK) {
+                    transpile_stmt_to_c(cg, node->data.if_stmt.else_branch);
+                } else {
+                    transpile_stmt_to_c(cg, node->data.if_stmt.else_branch);
+                }
+                emit_c(cg, "}\n");
+            }
+            break;
+        }
         default:
             // Not implemented
             break;

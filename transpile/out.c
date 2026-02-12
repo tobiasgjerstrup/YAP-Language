@@ -12,5 +12,25 @@ printf("%s\n", hello);
 x = 20;
 int y = 5;
 printf("%d\n", x);
+if (x > y) {
+printf("%s\n", "x is greater than y");
+if (x == 20) {
+printf("%s\n", "x is 20");
+if (x > 30) {
+printf("%s\n", "x is less than 30");
+}
+else {
+printf("%s\n", "x is not less than 30");
+}
+}
+else {
+printf("%s\n", "x is not 20");
+}
+}
+else {
+printf("%s\n", "x is not greater than y");
+}
+int longLoop = 2147483647;
+printf("%d\n", longLoop);
     return 0;
 }

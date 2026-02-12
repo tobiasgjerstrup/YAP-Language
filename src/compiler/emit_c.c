@@ -109,6 +109,13 @@ void gen_c_expr(Codegen *cg, ASTNode *expr, char *buf, size_t buflen) {
         case NODE_IDENTIFIER:
             snprintf(buf, buflen, "%s", expr->data.identifier.name);
             break;
+        case NODE_BINARY_OP: {
+            char left_buf[128], right_buf[128];
+            gen_c_expr(cg, expr->data.binary_op.left, left_buf, sizeof(left_buf));
+            gen_c_expr(cg, expr->data.binary_op.right, right_buf, sizeof(right_buf));
+            snprintf(buf, buflen, "%s %s %s", left_buf, expr->data.binary_op.op, right_buf);
+            break;
+        }
         default:
             snprintf(buf, buflen, "/* unsupported expr */");
     }
