@@ -1,3 +1,5 @@
+    // Add variable type tracking
+    int declared_var_types[256]; // 0: int, 1: string
 #include "compiler/emit.h"
 #include "compiler/codegen_ctx.h"
 #include <stdio.h>
@@ -60,6 +62,11 @@ void emit_c_var_decl(Codegen *cg, ASTNode *node) {
         }
         // Record variable as declared
         cg->declared_vars[cg->declared_var_count] = my_strdup(node->data.var_decl.name);
+        if (node->data.var_decl.value->type == NODE_STRING_LITERAL) {
+            cg->declared_var_types[cg->declared_var_count] = 1;
+        } else {
+            cg->declared_var_types[cg->declared_var_count] = 0;
+        }
         cg->declared_var_count++;
     }
 }
@@ -74,9 +81,14 @@ void emit_c_print(Codegen *cg, ASTNode *node) {
     if (val->type == NODE_STRING_LITERAL) {
         is_string = 1;
     } else if (val->type == NODE_IDENTIFIER) {
-        // TODO: lookup variable type if available
-        if (strcmp(val->data.identifier.name, "hello") == 0) {
-            is_string = 1;
+        // Lookup variable type if available
+        for (int i = 0; i < cg->declared_var_count; i++) {
+            if (strcmp(cg->declared_vars[i], val->data.identifier.name) == 0) {
+                if (cg->declared_var_types[i] == 1) {
+                    is_string = 1;
+                }
+                break;
+            }
         }
     } else if (val->type == NODE_CALL) {
         // Try to infer function return type from known exported functions

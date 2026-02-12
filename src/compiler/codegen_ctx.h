@@ -44,6 +44,7 @@ typedef struct {
     Local locals[MAX_LOCALS];
     int local_count;
     char *declared_vars[MAX_LOCALS];
+    int declared_var_types[MAX_LOCALS]; // 0: int, 1: string
     int declared_var_count;
     int label_counter;
     int stack_size;

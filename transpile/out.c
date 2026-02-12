@@ -1,10 +1,13 @@
 #include <stdio.h>
 
+const char* exportedFunctionUwU() {
+return "exported value!";
+}
 const char* exportedFunction() {
 return "exported value!";
 }
 void returnVoid() {
-printf("%s\n", "hello there!");
+printf("%s\n", "helloo there!");
 }
 const char* returnString() {
 return "crazy string!";
@@ -13,14 +16,14 @@ int returnInt() {
 return 0;
 }
 int main() {
-printf("%s\n", "hello world");
+printf("%s\n", "helloo world");
 printf("%d\n", 69);
 int x = 10;
-const char *hello = "hello";
+const char *helloo = "helloo";
 printf("%d\n", x);
-printf("%s\n", hello);
-hello = "world!";
-printf("%s\n", hello);
+printf("%s\n", helloo);
+helloo = "world!";
+printf("%s\n", helloo);
 x = 20;
 int y = 5;
 printf("%d\n", x);
