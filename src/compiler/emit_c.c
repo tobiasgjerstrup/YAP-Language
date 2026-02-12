@@ -2,6 +2,32 @@
 #include "compiler/codegen_ctx.h"
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
+
+static char *my_strdup(const char *s) {
+    size_t len = strlen(s);
+    char *copy = (char *)malloc(len + 1);
+    if (!copy) return NULL;
+    memcpy(copy, s, len + 1);
+    return copy;
+}
+
+#ifndef HAVE_STRDUP
+#if !(defined(_MSC_VER) || defined(__MINGW32__))
+#define HAVE_STRDUP 1
+#endif
+#endif
+
+#if !HAVE_STRDUP
+static char *my_strdup(const char *s) {
+    size_t len = strlen(s);
+    char *copy = (char *)malloc(len + 1);
+    if (!copy) return NULL;
+    memcpy(copy, s, len + 1);
+    return copy;
+}
+#define strdup my_strdup
+#endif
 #include <stdarg.h>
 
 // Transpile YAP variable assignment to C
@@ -15,13 +41,26 @@ void emit_c_var_decl(Codegen *cg, ASTNode *node) {
     // For now, only handle int and string literals
     char expr_buf[256];
     gen_c_expr(cg, node->data.var_decl.value, expr_buf, sizeof(expr_buf));
-    // TODO: Type inference, for now assume int if literal, string if literal
-    if (node->data.var_decl.value->type == NODE_INT_LITERAL) {
-        emit_c(cg, "int %s = %s;\n", node->data.var_decl.name, expr_buf);
-    } else if (node->data.var_decl.value->type == NODE_STRING_LITERAL) {
-        emit_c(cg, "const char *%s = %s;\n", node->data.var_decl.name, expr_buf);
+    int already_declared = 0;
+    for (int i = 0; i < cg->declared_var_count; i++) {
+        if (strcmp(cg->declared_vars[i], node->data.var_decl.name) == 0) {
+            already_declared = 1;
+            break;
+        }
+    }
+    if (already_declared) {
+        emit_c(cg, "%s = %s;\n", node->data.var_decl.name, expr_buf);
     } else {
-        emit_c(cg, "/* unsupported var type */\n");
+        if (node->data.var_decl.value->type == NODE_INT_LITERAL) {
+            emit_c(cg, "int %s = %s;\n", node->data.var_decl.name, expr_buf);
+        } else if (node->data.var_decl.value->type == NODE_STRING_LITERAL) {
+            emit_c(cg, "const char *%s = %s;\n", node->data.var_decl.name, expr_buf);
+        } else {
+            emit_c(cg, "/* unsupported var type */\n");
+        }
+        // Record variable as declared
+        cg->declared_vars[cg->declared_var_count] = my_strdup(node->data.var_decl.name);
+        cg->declared_var_count++;
     }
 }
 

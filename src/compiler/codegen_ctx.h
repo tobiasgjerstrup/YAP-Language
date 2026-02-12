@@ -43,6 +43,8 @@ typedef struct {
     FILE *out;
     Local locals[MAX_LOCALS];
     int local_count;
+    char *declared_vars[MAX_LOCALS];
+    int declared_var_count;
     int label_counter;
     int stack_size;
     char error[256];
