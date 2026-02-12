@@ -15,8 +15,22 @@ void transpile_stmt_to_c(Codegen *cg, ASTNode *node) {
     if (!node) return;
     switch (node->type) {
         case NODE_FUNC_DECL: {
-            // Emit function signature
-            emit_c(cg, "int %s(", node->data.func_decl.name);
+            // Infer return type (simple heuristic: first return statement type, else void)
+            const char* rettype = "void";
+            ASTNode* body = node->data.func_decl.body;
+            if (body && body->type == NODE_BLOCK) {
+                for (int i = 0; i < body->statement_count; i++) {
+                    ASTNode* stmt = body->statements[i];
+                    if (stmt && stmt->type == NODE_RETURN_STMT && stmt->data.return_stmt.value) {
+                        ASTNode* val = stmt->data.return_stmt.value;
+                        if (val->type == NODE_STRING_LITERAL) rettype = "const char*";
+                        else if (val->type == NODE_INT_LITERAL) rettype = "int";
+                        else rettype = "int";
+                        break;
+                    }
+                }
+            }
+            emit_c(cg, "%s %s(", rettype, node->data.func_decl.name);
             for (int i = 0; i < node->data.func_decl.param_count; i++) {
                 emit_c(cg, "int %s%s", node->data.func_decl.params[i], (i < node->data.func_decl.param_count - 1) ? ", " : "");
             }

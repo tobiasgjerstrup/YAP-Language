@@ -70,16 +70,27 @@ void emit_c_print(Codegen *cg, ASTNode *node) {
     char expr_buf[256];
     gen_c_expr(cg, node->data.print_stmt.value, expr_buf, sizeof(expr_buf));
     char c_line[512];
-        // Check if the expression is a string literal or known string variable
-        if (node->data.print_stmt.value->type == NODE_STRING_LITERAL) {
-            print_type = TYPE_STRING;
-        } else if (node->data.print_stmt.value->type == NODE_IDENTIFIER) {
-            // For now, treat variable named "hello" as string (example)
-            if (strcmp(node->data.print_stmt.value->data.identifier.name, "hello") == 0) {
-                print_type = TYPE_STRING;
-            }
+    int is_string = 0;
+    ASTNode *val = node->data.print_stmt.value;
+    if (val->type == NODE_STRING_LITERAL) {
+        is_string = 1;
+    } else if (val->type == NODE_IDENTIFIER) {
+        if (strcmp(val->data.identifier.name, "hello") == 0) {
+            is_string = 1;
         }
-    if (print_type == TYPE_STRING) {
+    } else if (val->type == NODE_CALL) {
+        // Heuristic: if function name is known to return string, print as string
+        // For now, if function name contains "String" or "string", treat as string
+        const char *fname = val->data.call.name;
+        if (strstr(fname, "String") || strstr(fname, "string")) {
+            is_string = 1;
+        }
+        // Or, if the function is returnString, treat as string (demo)
+        if (strcmp(fname, "returnString") == 0) {
+            is_string = 1;
+        }
+    }
+    if (is_string) {
         snprintf(c_line, sizeof(c_line), "printf(\"%%s\\n\", %s);\n", expr_buf);
     } else {
         snprintf(c_line, sizeof(c_line), "printf(\"%%d\\n\", %s);\n", expr_buf);

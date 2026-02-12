@@ -45,8 +45,18 @@ while (longLoop > 0) {
 // print("Long loop time (seconds): " + longLoopTime);
 // }
 
-fn helloThere() {
+fn returnVoid() {
     print("hello there!");
 }
 
-helloThere();
+fn returnString() {
+    return "crazy string!";
+}
+
+fn returnInt() {
+    return 0;
+}
+
+returnVoid();
+print(returnString());
+print(returnInt());

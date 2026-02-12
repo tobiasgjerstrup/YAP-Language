@@ -1,7 +1,13 @@
 #include <stdio.h>
 
-int helloThere() {
+void returnVoid() {
 printf("%s\n", "hello there!");
+}
+const char* returnString() {
+return "crazy string!";
+}
+int returnInt() {
+return 0;
 }
 int main() {
 printf("%s\n", "hello world");
@@ -41,6 +47,8 @@ if (longLoop % 100000000 == 0) {
 printf("%d\n", longLoop);
 }
 }
-helloThere();
+returnVoid();
+printf("%s\n", returnString());
+printf("%d\n", returnInt());
     return 0;
 }
