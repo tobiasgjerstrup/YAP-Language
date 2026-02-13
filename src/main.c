@@ -354,6 +354,88 @@ ASTNode* ast_copy_node(ASTNode *node) {
     return copy;
 }
 
+// Recursively walk AST and rewrite std/ function call names to use prefix
+void rewrite_std_calls(ASTNode *node, char **std_names, int std_count) {
+    if (!node) return;
+    switch (node->type) {
+        case NODE_CALL: {
+            for (int i = 0; i < std_count; i++) {
+                if (strcmp(node->data.call.name, std_names[i]) == 0) {
+                    size_t orig_len = strlen(node->data.call.name);
+                    char *prefixed = malloc(orig_len + 10);
+                    sprintf(prefixed, "YAP_STD_%s", node->data.call.name);
+                    free(node->data.call.name);
+                    node->data.call.name = prefixed;
+                    break;
+                }
+            }
+            for (int i = 0; i < node->data.call.arg_count; i++) {
+                rewrite_std_calls(node->data.call.args[i], std_names, std_count);
+            }
+            break;
+        }
+        case NODE_VAR_DECL:
+            rewrite_std_calls(node->data.var_decl.value, std_names, std_count);
+            break;
+        case NODE_ASSIGNMENT:
+            rewrite_std_calls(node->data.assignment.value, std_names, std_count);
+            break;
+        case NODE_PRINT_STMT:
+            rewrite_std_calls(node->data.print_stmt.value, std_names, std_count);
+            break;
+        case NODE_IF_STMT:
+            rewrite_std_calls(node->data.if_stmt.condition, std_names, std_count);
+            rewrite_std_calls(node->data.if_stmt.then_branch, std_names, std_count);
+            rewrite_std_calls(node->data.if_stmt.else_branch, std_names, std_count);
+            break;
+        case NODE_WHILE_STMT:
+            rewrite_std_calls(node->data.while_stmt.condition, std_names, std_count);
+            rewrite_std_calls(node->data.while_stmt.body, std_names, std_count);
+            break;
+        case NODE_RETURN_STMT:
+            rewrite_std_calls(node->data.return_stmt.value, std_names, std_count);
+            break;
+        case NODE_FUNC_DECL:
+            rewrite_std_calls(node->data.func_decl.body, std_names, std_count);
+            break;
+        case NODE_BINARY_OP:
+            rewrite_std_calls(node->data.binary_op.left, std_names, std_count);
+            rewrite_std_calls(node->data.binary_op.right, std_names, std_count);
+            break;
+        case NODE_UNARY_OP:
+            rewrite_std_calls(node->data.unary_op.operand, std_names, std_count);
+            break;
+        case NODE_BLOCK:
+        case NODE_PROGRAM:
+            for (int i = 0; i < node->statement_count; i++) {
+                rewrite_std_calls(node->statements[i], std_names, std_count);
+            }
+            break;
+        case NODE_ARRAY_LITERAL:
+            for (int i = 0; i < node->data.array_literal.element_count; i++) {
+                rewrite_std_calls(node->data.array_literal.elements[i], std_names, std_count);
+            }
+            break;
+        case NODE_ARRAY_INDEX:
+            rewrite_std_calls(node->data.array_index.array, std_names, std_count);
+            rewrite_std_calls(node->data.array_index.index, std_names, std_count);
+            break;
+        case NODE_TRY:
+            rewrite_std_calls(node->data.try_stmt.try_block, std_names, std_count);
+            rewrite_std_calls(node->data.try_stmt.catch_block, std_names, std_count);
+            rewrite_std_calls(node->data.try_stmt.finally_block, std_names, std_count);
+            break;
+        case NODE_THROW:
+        case NODE_INT_LITERAL:
+        case NODE_STRING_LITERAL:
+        case NODE_BOOL_LITERAL:
+        case NODE_IDENTIFIER:
+        case NODE_IMPORT:
+        default:
+            break;
+    }
+}
+
 // Process imports recursively: load files, parse them, and collect exported functions
 int process_imports(ASTNode *program, ASTNode ***imported_functions, int *imported_count, const char *base_dir) {
     if (!program || program->type != NODE_PROGRAM) {
@@ -402,15 +484,15 @@ int process_imports(ASTNode *program, ASTNode ***imported_functions, int *import
             // If selective imports, track which functions to include
             int include_all = (stmt->data.import_stmt.import_count == 0);
             int is_std_import = (strncmp(mod, "std/", 4) == 0);
+            char **std_names = NULL;
+            int std_count = 0;
 
             // Collect exported functions
             if (imported_program && imported_program->type == NODE_PROGRAM) {
                 for (int j = 0; j < imported_program->statement_count; j++) {
                     ASTNode *imported_stmt = imported_program->statements[j];
-
                     if (imported_stmt->type == NODE_FUNC_DECL) {
                         int should_include = include_all;
-
                         // If selective import, check if this function is in the import list
                         if (!include_all) {
                             for (int k = 0; k < stmt->data.import_stmt.import_count; k++) {
@@ -420,17 +502,18 @@ int process_imports(ASTNode *program, ASTNode ***imported_functions, int *import
                                 }
                             }
                         }
-
                         if (should_include && imported_stmt->data.func_decl.is_exported) {
-                            // Add a deep copy to imported functions
                             ASTNode *copy = ast_copy_node(imported_stmt);
-                            // Prefix std/ function names to avoid C conflicts
                             if (is_std_import) {
                                 size_t orig_len = strlen(copy->data.func_decl.name);
-                                char *prefixed = malloc(orig_len + 10); // "YAP_STD_" + null
+                                char *prefixed = malloc(orig_len + 10);
                                 sprintf(prefixed, "YAP_STD_%s", copy->data.func_decl.name);
                                 free(copy->data.func_decl.name);
                                 copy->data.func_decl.name = prefixed;
+                                // Track std/ function name for call rewriting
+                                std_names = realloc(std_names, (std_count + 1) * sizeof(char*));
+                                std_names[std_count] = strdup(imported_stmt->data.func_decl.name);
+                                std_count++;
                             }
                             *imported_functions = realloc(*imported_functions, (*imported_count + 1) * sizeof(ASTNode*));
                             (*imported_functions)[*imported_count] = copy;
@@ -438,6 +521,12 @@ int process_imports(ASTNode *program, ASTNode ***imported_functions, int *import
                         }
                     }
                 }
+            }
+            // After import, rewrite all call sites in the main program to use the prefix
+            if (is_std_import && std_count > 0) {
+                rewrite_std_calls(program, std_names, std_count);
+                for (int i = 0; i < std_count; i++) free(std_names[i]);
+                free(std_names);
             }
             
             // Free the imported program and parser

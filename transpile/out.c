@@ -12,6 +12,12 @@ i = i + 1;
 }
 return result;
 }
+int YAP_STD_abs(int x) {
+if (x < 0) {
+return /* unsupported expr */;
+}
+return x;
+}
 const char* exportedFunction() {
 return "exported value!";
 }
@@ -67,5 +73,6 @@ printf("%s\n", returnString());
 printf("%d\n", returnInt());
 printf("%s\n", exportedFunction());
 printf("%d\n", YAP_STD_pow(2, 8));
+printf("%d\n", YAP_STD_abs(10));
     return 0;
 }
