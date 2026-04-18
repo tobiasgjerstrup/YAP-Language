@@ -10,10 +10,12 @@
     "build": "tsc",
     "start": "npm run build && node dist/index.js",
     "transpile": "node dist/index.js",
-    "test": "vitest run --reporter=verbose"
+    "test": "vitest run --reporter=verbose",
+    "test:coverage": "vitest run --coverage"
   },
   "devDependencies": {
     "@types/node": "25.6.0",
+    "@vitest/coverage-v8": "4.1.4",
     "prettier": "3.8.3",
     "typescript": "6.0.2",
     "vitest": "4.1.4"

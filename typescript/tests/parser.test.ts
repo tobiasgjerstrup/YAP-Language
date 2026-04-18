@@ -27,6 +27,12 @@ describe('Parser', () => {
             expect(prog.fns[0]).toMatchObject({ name: 'main', params: [], returnType: 'int32', body: [] });
         });
 
+        it('given main without explicit return type, expects default int32 return type', () => {
+            const prog = parse('fn main() {}');
+            expect(prog.fns).toHaveLength(1);
+            expect(prog.fns[0]).toMatchObject({ name: 'main', params: [], returnType: 'int32', body: [] });
+        });
+
         it('given fn with single param, expects param recorded', () => {
             const prog = parse('fn double(x int32) int32 {}');
             expect(prog.fns[0].params).toEqual([{ name: 'x', paramType: 'int32' }]);
@@ -279,6 +285,10 @@ describe('Parser', () => {
 
         it('given unexpected token in expression, expects throw', () => {
             expect(() => parse('fn f() int32 { return @ }')).toThrow('Unexpected');
+        });
+
+        it('given RPAREN where a primary expression is expected, throws parsePrimary unexpected-token error', () => {
+            expect(() => parse('fn f() int32 { return ) }')).toThrow("Unexpected token RPAREN (')') at line 1");
         });
     });
 });
