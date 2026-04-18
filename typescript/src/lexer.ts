@@ -1,0 +1,93 @@
+export type TokenType =
+  | 'NUMBER' | 'STRING' | 'IDENT'
+  | 'LET' | 'FN' | 'IF' | 'ELSE' | 'WHILE' | 'RETURN' | 'PRINT'
+  | 'PLUS' | 'MINUS' | 'STAR' | 'SLASH'
+  | 'EQ' | 'EQEQ' | 'NEQ' | 'LT' | 'GT' | 'LTE' | 'GTE'
+  | 'LPAREN' | 'RPAREN' | 'LBRACE' | 'RBRACE' | 'COMMA' | 'SEMI'
+  | 'EOF';
+
+export interface Token {
+  type: TokenType;
+  value: string;
+  line: number;
+}
+
+const KEYWORDS: Record<string, TokenType> = {
+  let: 'LET', fn: 'FN', if: 'IF', else: 'ELSE',
+  while: 'WHILE', return: 'RETURN', print: 'PRINT',
+};
+
+export function lex(source: string): Token[] {
+  const tokens: Token[] = [];
+  let i = 0;
+  let line = 1;
+
+  while (i < source.length) {
+    const ch = source[i];
+
+    // Whitespace
+    if (ch === '\n') { line++; i++; continue; }
+    if (/\s/.test(ch)) { i++; continue; }
+
+    // Line comments
+    if (ch === '/' && source[i + 1] === '/') {
+      while (i < source.length && source[i] !== '\n') i++;
+      continue;
+    }
+
+    // Numbers
+    if (/[0-9]/.test(ch)) {
+      let num = '';
+      while (i < source.length && /[0-9]/.test(source[i])) num += source[i++];
+      tokens.push({ type: 'NUMBER', value: num, line });
+      continue;
+    }
+
+    // Strings
+    if (ch === '"') {
+      let str = '';
+      i++; // skip opening quote
+      while (i < source.length && source[i] !== '"') {
+        if (source[i] === '\\' && source[i + 1] === '"') { str += '"'; i += 2; }
+        else str += source[i++];
+      }
+      i++; // skip closing quote
+      tokens.push({ type: 'STRING', value: str, line });
+      continue;
+    }
+
+    // Identifiers / keywords
+    if (/[a-zA-Z_]/.test(ch)) {
+      let id = '';
+      while (i < source.length && /[a-zA-Z0-9_]/.test(source[i])) id += source[i++];
+      const type = KEYWORDS[id] ?? 'IDENT';
+      tokens.push({ type, value: id, line });
+      continue;
+    }
+
+    // Two-char operators
+    const two = source.slice(i, i + 2);
+    if (two === '==') { tokens.push({ type: 'EQEQ', value: '==', line }); i += 2; continue; }
+    if (two === '!=') { tokens.push({ type: 'NEQ',  value: '!=', line }); i += 2; continue; }
+    if (two === '<=') { tokens.push({ type: 'LTE',  value: '<=', line }); i += 2; continue; }
+    if (two === '>=') { tokens.push({ type: 'GTE',  value: '>=', line }); i += 2; continue; }
+
+    // Single-char tokens
+    const singles: Record<string, TokenType> = {
+      '+': 'PLUS', '-': 'MINUS', '*': 'STAR', '/': 'SLASH',
+      '=': 'EQ', '<': 'LT', '>': 'GT',
+      '(': 'LPAREN', ')': 'RPAREN', '{': 'LBRACE', '}': 'RBRACE',
+      ',': 'COMMA', ';': 'SEMI',
+    };
+    if (singles[ch]) {
+      tokens.push({ type: singles[ch], value: ch, line });
+      i++;
+      continue;
+    }
+
+    throw new Error(`Unexpected character '${ch}' at line ${line}`);
+  }
+
+  tokens.push({ type: 'EOF', value: '', line });
+  return tokens;
+}
