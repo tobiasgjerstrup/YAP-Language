@@ -1,6 +1,13 @@
 import { Program, FnDecl, Stmt, Expr } from './parser.js';
 
-// Infer whether an expression is a string (for printf format selection)
+/**
+ * Infers whether an expression should be printed as a C string.
+ *
+ * @param expr Expression to inspect.
+ * @param varTypes Current function-local variable type table.
+ * @param fnReturnTypes Known function return type table.
+ * @returns True when expression is string-typed.
+ */
 function isStringExpr(expr: Expr, varTypes: Map<string, string>, fnReturnTypes: Map<string, string>): boolean {
     if (expr.kind === 'String') return true;
     if (expr.kind === 'Ident') return varTypes.get(expr.name) === 'string';
@@ -8,6 +15,14 @@ function isStringExpr(expr: Expr, varTypes: Map<string, string>, fnReturnTypes: 
     return false;
 }
 
+/**
+ * Generates C source code for a parsed YAP program.
+ *
+ * Emits includes, forward declarations, and full function definitions.
+ *
+ * @param program Program AST.
+ * @returns Generated C source file contents.
+ */
 export function generate(program: Program): string {
     const lines: string[] = [];
     const fnReturnTypes = new Map(program.fns.map((f) => [f.name, f.returnType] as const));
@@ -32,6 +47,9 @@ export function generate(program: Program): string {
     return lines.join('\n');
 }
 
+/**
+ * Generates a C function definition from a YAP function node.
+ */
 function genFn(fn: FnDecl, fnReturnTypes: Map<string, string>): string {
     const isMain = fn.name === 'main';
     const retType = isMain ? 'int' : mapTypeToC(fn.returnType);
@@ -46,6 +64,9 @@ function genFn(fn: FnDecl, fnReturnTypes: Map<string, string>): string {
     return `${retType} ${fn.name}(${params}) {\n${body}${footer}\n}`;
 }
 
+/**
+ * Indents each line of a block by four spaces.
+ */
 function indent(s: string): string {
     return s
         .split('\n')
@@ -53,6 +74,9 @@ function indent(s: string): string {
         .join('\n');
 }
 
+/**
+ * Generates C code for a statement node.
+ */
 function genStmt(stmt: Stmt, varTypes: Map<string, string>, fnReturnTypes: Map<string, string>): string {
     switch (stmt.kind) {
         case 'VarDecl': {
@@ -100,6 +124,11 @@ function genStmt(stmt: Stmt, varTypes: Map<string, string>, fnReturnTypes: Map<s
     }
 }
 
+/**
+ * Maps language-level types to C types.
+ *
+ * @throws {Error} If the type is unsupported.
+ */
 function mapTypeToC(varType: string): string {
     switch (varType) {
         case 'int32':
@@ -113,6 +142,9 @@ function mapTypeToC(varType: string): string {
     }
 }
 
+/**
+ * Generates C code for an expression node.
+ */
 function genExpr(expr: Expr): string {
     switch (expr.kind) {
         case 'Number':

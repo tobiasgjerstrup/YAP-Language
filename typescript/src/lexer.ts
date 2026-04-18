@@ -44,6 +44,16 @@ const KEYWORDS: Record<string, TokenType> = {
     print: 'PRINT',
 };
 
+/**
+ * Converts raw YAP source text into a flat token stream.
+ *
+ * Handles whitespace, line comments, numeric/string literals,
+ * identifiers/keywords, operators, and punctuation.
+ *
+ * @param source Raw source text.
+ * @returns Token list ending with an `EOF` token.
+ * @throws {Error} If an unexpected character is encountered.
+ */
 export function lex(source: string): Token[] {
     const tokens: Token[] = [];
     let i = 0;

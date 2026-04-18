@@ -36,6 +36,17 @@ export interface Program {
 
 import { Token, TokenType, lex } from './lexer.js';
 
+/**
+ * Parses YAP source code into a `Program` AST.
+ *
+ * @param source Raw YAP source text.
+ * @returns Parsed AST containing all function declarations.
+ * @throws {Error} If the source contains invalid syntax.
+ *
+ * @example
+ * const parser = new Parser('fn main() int32 { let x int32 = 5 + 3 }');
+ * const ast = parser.parseProgram();
+ */
 export class Parser {
     private tokens: Token[];
     private pos = 0;
@@ -73,6 +84,11 @@ export class Parser {
 
     // ── Grammar ─────────────────────────────────────────────────────────────────
 
+    /**
+     * Parses the full token stream as a sequence of function declarations.
+     *
+     * @returns Program AST root.
+     */
     parseProgram(): Program {
         const fns: FnDecl[] = [];
         while (!this.check('EOF')) {
@@ -81,6 +97,12 @@ export class Parser {
         return { fns };
     }
 
+    /**
+     * Parses a function declaration including signature and block body.
+     *
+     * @returns Parsed function node.
+     * @throws {Error} When required syntax (or non-main return type) is missing.
+     */
     private parseFn(): FnDecl {
         this.eat('FN');
         const name = this.eat('IDENT').value;
@@ -113,6 +135,11 @@ export class Parser {
         return { name, params, returnType, body };
     }
 
+    /**
+     * Parses statements until a closing brace or EOF is reached.
+     *
+     * @returns Statement array for a block.
+     */
     private parseBlock(): Stmt[] {
         const stmts: Stmt[] = [];
         while (!this.check('RBRACE') && !this.check('EOF')) {
@@ -122,6 +149,11 @@ export class Parser {
         return stmts;
     }
 
+    /**
+     * Parses one statement by dispatching on the current token.
+     *
+     * @returns Parsed statement node.
+     */
     private parseStmt(): Stmt {
         const t = this.peek();
 
@@ -185,10 +217,18 @@ export class Parser {
     }
 
     // Precedence climbing
+    /**
+     * Parses a full expression using precedence-aware helpers.
+     *
+     * @returns Parsed expression node.
+     */
     private parseExpr(): Expr {
         return this.parseComparison();
     }
 
+    /**
+     * Parses comparison-level binary expressions.
+     */
     private parseComparison(): Expr {
         let left = this.parseAddSub();
         const ops = ['EQEQ', 'NEQ', 'LT', 'GT', 'LTE', 'GTE'] as TokenType[];
@@ -199,6 +239,9 @@ export class Parser {
         return left;
     }
 
+    /**
+     * Parses addition/subtraction expressions.
+     */
     private parseAddSub(): Expr {
         let left = this.parseMulDiv();
         while (this.check('PLUS') || this.check('MINUS')) {
@@ -208,6 +251,9 @@ export class Parser {
         return left;
     }
 
+    /**
+     * Parses multiplication/division expressions.
+     */
     private parseMulDiv(): Expr {
         let left = this.parseUnary();
         while (this.check('STAR') || this.check('SLASH')) {
@@ -217,6 +263,9 @@ export class Parser {
         return left;
     }
 
+    /**
+     * Parses unary expressions (currently unary minus).
+     */
     private parseUnary(): Expr {
         if (this.check('MINUS')) {
             this.advance();
@@ -226,6 +275,11 @@ export class Parser {
         return this.parsePrimary();
     }
 
+    /**
+     * Parses literals, identifiers, function calls, and parenthesized expressions.
+     *
+     * @throws {Error} If the current token cannot start a primary expression.
+     */
     private parsePrimary(): Expr {
         const t = this.peek();
 
