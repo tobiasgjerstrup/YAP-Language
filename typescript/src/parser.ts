@@ -8,7 +8,7 @@ export type Expr =
   | { kind: 'Call';   callee: string; args: Expr[] };
 
 export type Stmt =
-  | { kind: 'VarDecl';   name: string; init: Expr }
+  | { kind: 'VarDecl';   name: string; varType: string; init: Expr }
   | { kind: 'Assign';    name: string; value: Expr }
   | { kind: 'Print';     arg: Expr }
   | { kind: 'Return';    value: Expr }
@@ -16,9 +16,15 @@ export type Stmt =
   | { kind: 'While';     cond: Expr; body: Stmt[] }
   | { kind: 'ExprStmt';  expr: Expr };
 
+export interface ParamDecl {
+  name: string;
+  paramType: string;
+}
+
 export interface FnDecl {
   name: string;
-  params: string[];
+  params: ParamDecl[];
+  returnType: string;
   body: Stmt[];
 }
 
@@ -72,16 +78,32 @@ export class Parser {
     this.eat('FN');
     const name = this.eat('IDENT').value;
     this.eat('LPAREN');
-    const params: string[] = [];
+    const params: ParamDecl[] = [];
     if (!this.check('RPAREN')) {
-      params.push(this.eat('IDENT').value);
-      while (this.match('COMMA')) params.push(this.eat('IDENT').value);
+      params.push({
+        name: this.eat('IDENT').value,
+        paramType: this.eat('IDENT').value,
+      });
+      while (this.match('COMMA')) {
+        params.push({
+          name: this.eat('IDENT').value,
+          paramType: this.eat('IDENT').value,
+        });
+      }
     }
     this.eat('RPAREN');
+
+    let returnType = 'int32';
+    if (this.check('IDENT')) {
+      returnType = this.eat('IDENT').value;
+    } else if (name !== 'main') {
+      throw new Error(`Function '${name}' must declare a return type`);
+    }
+
     this.eat('LBRACE');
     const body = this.parseBlock();
     this.eat('RBRACE');
-    return { name, params, body };
+    return { name, params, returnType, body };
   }
 
   private parseBlock(): Stmt[] {
@@ -99,9 +121,10 @@ export class Parser {
     if (t.type === 'LET') {
       this.advance();
       const name = this.eat('IDENT').value;
+      const varType = this.eat('IDENT').value;
       this.eat('EQ');
       const init = this.parseExpr();
-      return { kind: 'VarDecl', name, init };
+      return { kind: 'VarDecl', name, varType, init };
     }
 
     if (t.type === 'RETURN') {
