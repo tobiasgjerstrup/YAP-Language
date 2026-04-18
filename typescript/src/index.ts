@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { Parser } from './parser';
-import { generate } from './codegen';
+import { Parser } from './parser.js';
+import { generate } from './codegen.js';
 
 const args = process.argv.slice(2);
 if (args.length === 0) {

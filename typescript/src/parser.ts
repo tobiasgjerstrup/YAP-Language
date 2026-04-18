@@ -34,7 +34,7 @@ export interface Program {
 
 // ─── Parser ───────────────────────────────────────────────────────────────────
 
-import { Token, TokenType, lex } from './lexer';
+import { Token, TokenType, lex } from './lexer.js';
 
 export class Parser {
     private tokens: Token[];

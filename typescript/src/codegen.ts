@@ -1,4 +1,4 @@
-import { Program, FnDecl, Stmt, Expr } from './parser';
+import { Program, FnDecl, Stmt, Expr } from './parser.js';
 
 // Infer whether an expression is a string (for printf format selection)
 function isStringExpr(expr: Expr, varTypes: Map<string, string>, fnReturnTypes: Map<string, string>): boolean {
