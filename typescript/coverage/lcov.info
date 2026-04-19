@@ -1,5 +1,5 @@
 TN:
-SF:src\codegen.ts
+SF:src\codegen\codegen.ts
 FN:11,isStringExpr
 FN:26,generate
 FN:28,(anonymous_2)
@@ -146,7 +146,7 @@ BRF:42
 BRH:42
 end_of_record
 TN:
-SF:src\lexer.ts
+SF:src\lexer\lexer.ts
 FN:57,lex
 FNF:1
 FNH:1
@@ -258,7 +258,7 @@ BRF:38
 BRH:38
 end_of_record
 TN:
-SF:src\parser.ts
+SF:src\parser\parser.ts
 FN:54,(anonymous_0)
 FN:58,(anonymous_1)
 FN:61,(anonymous_2)

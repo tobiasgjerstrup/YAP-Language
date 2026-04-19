@@ -1,4 +1,4 @@
-import { Program, FnDecl, Stmt, Expr } from './parser.js';
+import { Program, FnDecl, Stmt, Expr } from '../parser/parser.js';
 
 /**
  * Infers whether an expression should be printed as a C string.

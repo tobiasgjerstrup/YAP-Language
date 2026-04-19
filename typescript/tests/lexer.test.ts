@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { lex, Token } from '../src/lexer.js';
+import { lex, Token } from '../src/lexer/lexer.js';
 
 function types(tokens: Token[]) {
     return tokens.map((t) => t.type);

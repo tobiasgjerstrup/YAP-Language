@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { generate } from '../src/codegen';
-import { Program } from '../src/parser';
+import { generate } from '../src/codegen/codegen.js';
+import { Program } from '../src/parser/parser.js';
 
 function normalizeEol(value: string): string {
     return value.replace(/\r\n/g, '\n');

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { __private } from '../src/codegen';
-import { Expr, FnDecl, Stmt } from '../src/parser';
+import { __private } from '../src/codegen/codegen.js';
+import { Expr, FnDecl, Stmt } from '../src/parser/parser.js';
 
 describe('codegen private helpers', () => {
     beforeEach(() => {

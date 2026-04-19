@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { Parser } from '../src/parser.js';
+import { Parser } from '../src/parser/parser.js';
 
 describe('Parser', () => {
     beforeEach(() => {

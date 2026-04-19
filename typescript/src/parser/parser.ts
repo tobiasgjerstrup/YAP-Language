@@ -34,7 +34,7 @@ export interface Program {
 
 // ─── Parser ───────────────────────────────────────────────────────────────────
 
-import { Token, TokenType, lex } from './lexer.js';
+import { Token, TokenType, lex } from '../lexer/lexer.js';
 
 /**
  * Parses YAP source code into a `Program` AST.
