@@ -30,6 +30,7 @@ export interface FnDecl {
 
 export interface Program {
     fns: FnDecl[];
+    imports?: string[];
 }
 
 // ─── Parser ───────────────────────────────────────────────────────────────────
@@ -91,10 +92,30 @@ export class Parser {
      */
     parseProgram(): Program {
         const fns: FnDecl[] = [];
+        const imports: string[] = [];
         while (!this.check('EOF')) {
+            if (this.check('IMPORT')) {
+                imports.push(this.parseImport());
+                continue;
+            }
             fns.push(this.parseFn());
         }
+        if (imports.length > 0) {
+            return { fns, imports };
+        }
         return { fns };
+    }
+
+    /**
+     * Parses a top-level import declaration.
+     *
+     * Syntax: import "./path/to/file.yap"[;]
+     */
+    private parseImport(): string {
+        this.eat('IMPORT');
+        const pathToken = this.eat('STRING');
+        this.match('SEMI');
+        return pathToken.value;
     }
 
     /**

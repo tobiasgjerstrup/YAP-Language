@@ -61,6 +61,7 @@ describe('lex', () => {
             ['while x', 'WHILE'],
             ['return x', 'RETURN'],
             ['print(x)', 'PRINT'],
+            ['import "./lib.yap"', 'IMPORT'],
         ] as const)('given "%s", expects first token to be %s', (src, expected) => {
             expect(lex(src)[0].type).toBe(expected);
         });

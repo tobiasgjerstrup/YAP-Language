@@ -61,6 +61,24 @@ describe('Parser', () => {
         });
     });
 
+    describe('imports', () => {
+        it('given top-level import, records import path', () => {
+            const prog = parse('import "./lib.yap" fn main() int32 {}');
+            expect(prog.imports).toEqual(['./lib.yap']);
+            expect(prog.fns).toHaveLength(1);
+        });
+
+        it('given import with semicolon, accepts optional semicolon', () => {
+            const prog = parse('import "./lib.yap"; fn main() int32 {}');
+            expect(prog.imports).toEqual(['./lib.yap']);
+            expect(prog.fns).toHaveLength(1);
+        });
+
+        it('given import without string path, expects throw', () => {
+            expect(() => parse('import foo fn main() int32 {}')).toThrow("Expected STRING but got IDENT ('foo')");
+        });
+    });
+
     describe('statements', () => {
         describe('VarDecl', () => {
             it('given let with number, expects VarDecl node', () => {

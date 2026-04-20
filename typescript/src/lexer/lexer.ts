@@ -9,6 +9,7 @@ export type TokenType =
     | 'WHILE'
     | 'RETURN'
     | 'PRINT'
+    | 'IMPORT'
     | 'PLUS'
     | 'MINUS'
     | 'STAR'
@@ -42,6 +43,7 @@ const KEYWORDS: Record<string, TokenType> = {
     while: 'WHILE',
     return: 'RETURN',
     print: 'PRINT',
+    import: 'IMPORT',
 };
 
 /**

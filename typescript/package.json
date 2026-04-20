@@ -11,7 +11,9 @@
     "start": "npm run build && node dist/index.js",
     "transpile": "node dist/index.js",
     "test": "vitest run --reporter=verbose",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "full": "npm run start examples/hello.yap examples/output.c && gcc ./examples/output.c && a.exe",
+    "full:mini": "npm run start examples/hello.yap examples/output.c && gcc -Os -s -ffunction-sections -fdata-sections -Wl,--gc-sections ./examples/output.c -o a.exe && a.exe"
   },
   "devDependencies": {
     "@types/node": "25.6.0",
