@@ -1,33 +1,36 @@
 export type TokenType =
-    | 'NUMBER'
-    | 'STRING'
-    | 'IDENT'
-    | 'LET'
-    | 'FN'
-    | 'IF'
-    | 'ELSE'
-    | 'WHILE'
-    | 'RETURN'
-    | 'PRINT'
-    | 'IMPORT'
-    | 'PLUS'
-    | 'MINUS'
-    | 'STAR'
-    | 'SLASH'
-    | 'EQ'
-    | 'EQEQ'
-    | 'NEQ'
-    | 'LT'
-    | 'GT'
-    | 'LTE'
-    | 'GTE'
-    | 'LPAREN'
-    | 'RPAREN'
-    | 'LBRACE'
-    | 'RBRACE'
-    | 'COMMA'
-    | 'SEMI'
-    | 'EOF';
+    | 'NUMBER' // e.g. 123
+    | 'STRING' // e.g. "hello"
+    | 'IDENT' // e.g. myVar
+    | 'LET' // 'let' keyword
+    | 'FN' // 'fn' keyword
+    | 'IF' // 'if' keyword
+    | 'ELSE' // 'else' keyword
+    | 'WHILE' // 'while' keyword
+    | 'RETURN' // 'return' keyword
+    | 'PRINT' // 'print' keyword
+    | 'IMPORT' // 'import' keyword
+    | 'PLUS' // '+'
+    | 'MINUS' // '-'
+    | 'STAR' // '*'
+    | 'SLASH' // '/'
+    | 'EQ' // '='
+    | 'EQEQ' // '=='
+    | 'NEQ' // '!='
+    | 'LT' // '<'
+    | 'GT' // '>'
+    | 'LTE' // '<='
+    | 'GTE' // '>='
+    | 'LPAREN' // '('
+    | 'RPAREN' // ')'
+    | 'LBRACE' // '{'
+    | 'RBRACE' // '}'
+    | 'LBRACKET' // '['
+    | 'RBRACKET' // ']'
+    | 'DOT' // '.'
+    | 'COMMA' // ','
+    | 'SEMI' // ';'
+    | 'EOF'; // end of file
 
 export interface Token {
     type: TokenType;
@@ -149,6 +152,9 @@ export function lex(source: string): Token[] {
             ')': 'RPAREN',
             '{': 'LBRACE',
             '}': 'RBRACE',
+            '[': 'LBRACKET',
+            ']': 'RBRACKET',
+            '.': 'DOT',
             ',': 'COMMA',
             ';': 'SEMI',
         };

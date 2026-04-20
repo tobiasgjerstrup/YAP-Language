@@ -5,11 +5,15 @@ export type Expr =
     | { kind: 'String'; value: string }
     | { kind: 'Ident'; name: string }
     | { kind: 'Binary'; op: string; left: Expr; right: Expr }
-    | { kind: 'Call'; callee: string; args: Expr[] };
+    | { kind: 'Call'; callee: string; args: Expr[] }
+    | { kind: 'ArrayLiteral'; elements: Expr[] }
+    | { kind: 'ArrayLength'; array: Expr }
+    | { kind: 'IndexAccess'; array: Expr; index: Expr };
 
 export type Stmt =
-    | { kind: 'VarDecl'; name: string; varType: string; init: Expr }
+    | { kind: 'VarDecl'; name: string; varType: string; init: Expr; arraySize?: number }
     | { kind: 'Assign'; name: string; value: Expr }
+    | { kind: 'IndexAssign'; array: Expr; index: Expr; value: Expr }
     | { kind: 'Print'; arg: Expr }
     | { kind: 'Return'; value: Expr }
     | { kind: 'If'; cond: Expr; then: Stmt[]; else_: Stmt[] }
@@ -146,6 +150,11 @@ export class Parser {
         let returnType = 'int32';
         if (this.check('IDENT')) {
             returnType = this.eat('IDENT').value;
+            if (this.match('LBRACKET')) {
+                const size = this.eat('NUMBER').value;
+                this.eat('RBRACKET');
+                returnType = `${returnType}[${size}]`;
+            }
         } else if (name !== 'main') {
             throw new Error(`Function '${name}' must declare a return type`);
         }
@@ -182,8 +191,16 @@ export class Parser {
             this.advance();
             const name = this.eat('IDENT').value;
             const varType = this.eat('IDENT').value;
+            let arraySize: number | undefined;
+            if (this.match('LBRACKET')) {
+                arraySize = Number(this.eat('NUMBER').value);
+                this.eat('RBRACKET');
+            }
             this.eat('EQ');
             const init = this.parseExpr();
+            if (arraySize !== undefined) {
+                return { kind: 'VarDecl', name, varType, init, arraySize };
+            }
             return { kind: 'VarDecl', name, varType, init };
         }
 
@@ -226,12 +243,19 @@ export class Parser {
             return { kind: 'While', cond, body };
         }
 
-        // Assignment: IDENT = expr
-        if (t.type === 'IDENT' && this.tokens[this.pos + 1]?.type === 'EQ') {
-            const name = this.advance().value;
-            this.advance(); // eat '='
-            const value = this.parseExpr();
-            return { kind: 'Assign', name, value };
+        // Assignment: IDENT = expr or IDENT[...] = expr
+        if (t.type === 'IDENT') {
+            const saved = this.pos;
+            const lhs = this.parsePrimary();
+            if ((lhs.kind === 'Ident' || lhs.kind === 'IndexAccess') && this.check('EQ')) {
+                this.advance(); // eat '='
+                const value = this.parseExpr();
+                if (lhs.kind === 'Ident') {
+                    return { kind: 'Assign', name: lhs.name, value };
+                }
+                return { kind: 'IndexAssign', array: lhs.array, index: lhs.index, value };
+            }
+            this.pos = saved;
         }
 
         return { kind: 'ExprStmt', expr: this.parseExpr() };
@@ -315,7 +339,39 @@ export class Parser {
 
         if (t.type === 'IDENT') {
             this.advance();
+            return this.parsePostfix({ kind: 'Ident', name: t.value }, t.line);
+        }
+
+        if (t.type === 'LBRACKET') {
+            this.advance();
+            const elements: Expr[] = [];
+            if (!this.check('RBRACKET')) {
+                elements.push(this.parseExpr());
+                while (this.match('COMMA')) {
+                    elements.push(this.parseExpr());
+                }
+            }
+            this.eat('RBRACKET');
+            return this.parsePostfix({ kind: 'ArrayLiteral', elements }, t.line);
+        }
+
+        if (t.type === 'LPAREN') {
+            this.advance();
+            const expr = this.parseExpr();
+            this.eat('RPAREN');
+            return this.parsePostfix(expr, t.line);
+        }
+
+        throw new Error(`Unexpected token ${t.type} ('${t.value}') at line ${t.line}`);
+    }
+
+    private parsePostfix(base: Expr, line: number): Expr {
+        let expr = base;
+        while (true) {
             if (this.check('LPAREN')) {
+                if (expr.kind !== 'Ident') {
+                    throw new Error(`Only identifiers can be called at line ${line}`);
+                }
                 this.advance();
                 const args: Expr[] = [];
                 if (!this.check('RPAREN')) {
@@ -323,18 +379,30 @@ export class Parser {
                     while (this.match('COMMA')) args.push(this.parseExpr());
                 }
                 this.eat('RPAREN');
-                return { kind: 'Call', callee: t.value, args };
+                expr = { kind: 'Call', callee: expr.name, args };
+                continue;
             }
-            return { kind: 'Ident', name: t.value };
-        }
 
-        if (t.type === 'LPAREN') {
-            this.advance();
-            const expr = this.parseExpr();
-            this.eat('RPAREN');
-            return expr;
-        }
+            if (this.check('LBRACKET')) {
+                this.advance();
+                const index = this.parseExpr();
+                this.eat('RBRACKET');
+                expr = { kind: 'IndexAccess', array: expr, index };
+                continue;
+            }
 
-        throw new Error(`Unexpected token ${t.type} ('${t.value}') at line ${t.line}`);
+            if (this.check('DOT')) {
+                this.advance();
+                const property = this.eat('IDENT');
+                if (property.value !== 'length') {
+                    throw new Error(`Unsupported property '${property.value}' at line ${property.line}`);
+                }
+                expr = { kind: 'ArrayLength', array: expr };
+                continue;
+            }
+
+            break;
+        }
+        return expr;
     }
 }

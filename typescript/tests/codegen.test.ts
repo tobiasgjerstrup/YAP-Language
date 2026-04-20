@@ -299,4 +299,215 @@ describe('codegen.generate', () => {
 
         expect(() => generate(program)).toThrow('Unsupported variable type: bool');
     });
+
+    it('given fixed-size array declaration and index access, expects C array syntax', () => {
+        const program: Program = {
+            fns: [
+                {
+                    name: 'main',
+                    params: [],
+                    returnType: 'int32',
+                    body: [
+                        { kind: 'VarDecl', name: 'arr', varType: 'int32', arraySize: 4, init: { kind: 'Number', value: 0 } },
+                        { kind: 'IndexAssign', array: { kind: 'Ident', name: 'arr' }, index: { kind: 'Number', value: 2 }, value: { kind: 'Number', value: 9 } },
+                        { kind: 'Print', arg: { kind: 'IndexAccess', array: { kind: 'Ident', name: 'arr' }, index: { kind: 'Number', value: 2 } } },
+                    ],
+                },
+            ],
+        };
+
+        const output = normalizeEol(generate(program));
+        expect(output).toContain('int32_t arr[4] = {0};');
+        expect(output).toContain('arr[2] = 9;');
+        expect(output).toContain('printf("%ld\\n", (long)(arr[2]));');
+    });
+
+    it('given function returning fixed-size array literal, expects pointer-returning C function with static buffer', () => {
+        const program: Program = {
+            fns: [
+                {
+                    name: 'nums',
+                    params: [],
+                    returnType: 'int32[3]',
+                    body: [
+                        {
+                            kind: 'Return',
+                            value: {
+                                kind: 'ArrayLiteral',
+                                elements: [
+                                    { kind: 'Number', value: 10 },
+                                    { kind: 'Number', value: 20 },
+                                    { kind: 'Number', value: 30 },
+                                ],
+                            },
+                        },
+                    ],
+                },
+                {
+                    name: 'main',
+                    params: [],
+                    returnType: 'int32',
+                    body: [
+                        {
+                            kind: 'Print',
+                            arg: {
+                                kind: 'IndexAccess',
+                                array: { kind: 'Call', callee: 'nums', args: [] },
+                                index: { kind: 'Number', value: 1 },
+                            },
+                        },
+                    ],
+                },
+            ],
+        };
+
+        const output = normalizeEol(generate(program));
+        expect(output).toContain('int32_t* nums(void);');
+        expect(output).toContain('int32_t* nums(void) {');
+        expect(output).toContain('static int32_t __yap_ret_nums[3] = {0};');
+        expect(output).toContain('__yap_ret_nums[0] = 10;');
+        expect(output).toContain('__yap_ret_nums[1] = 20;');
+        expect(output).toContain('__yap_ret_nums[2] = 30;');
+        expect(output).toContain('return __yap_ret_nums;');
+        expect(output).toContain('printf("%ld\\n", (long)(nums()[1]));');
+    });
+
+    it('given local array initialized from array-returning call, expects element-wise copy into local array', () => {
+        const program: Program = {
+            fns: [
+                {
+                    name: 'nums',
+                    params: [],
+                    returnType: 'int32[3]',
+                    body: [
+                        {
+                            kind: 'Return',
+                            value: {
+                                kind: 'ArrayLiteral',
+                                elements: [
+                                    { kind: 'Number', value: 10 },
+                                    { kind: 'Number', value: 20 },
+                                    { kind: 'Number', value: 30 },
+                                ],
+                            },
+                        },
+                    ],
+                },
+                {
+                    name: 'main',
+                    params: [],
+                    returnType: 'int32',
+                    body: [
+                        { kind: 'VarDecl', name: 'local', varType: 'int32', arraySize: 3, init: { kind: 'Call', callee: 'nums', args: [] } },
+                        { kind: 'Print', arg: { kind: 'IndexAccess', array: { kind: 'Ident', name: 'local' }, index: { kind: 'Number', value: 1 } } },
+                    ],
+                },
+            ],
+        };
+
+        const output = normalizeEol(generate(program));
+        expect(output).toContain('int32_t local[3] = {0};');
+        expect(output).toContain('int32_t* __yap_init_local = nums();');
+        expect(output).toContain('local[0] = __yap_init_local[0];');
+        expect(output).toContain('local[1] = __yap_init_local[1];');
+        expect(output).toContain('local[2] = __yap_init_local[2];');
+        expect(output).toContain('printf("%ld\\n", (long)(local[1]));');
+    });
+
+    it('given .length on local array, expects fixed numeric size in generated C', () => {
+        const program: Program = {
+            fns: [
+                {
+                    name: 'main',
+                    params: [],
+                    returnType: 'int32',
+                    body: [
+                        { kind: 'VarDecl', name: 'items', varType: 'int32', arraySize: 4, init: { kind: 'Number', value: 0 } },
+                        {
+                            kind: 'While',
+                            cond: {
+                                kind: 'Binary',
+                                op: '<',
+                                left: { kind: 'Ident', name: 'i' },
+                                right: { kind: 'ArrayLength', array: { kind: 'Ident', name: 'items' } },
+                            },
+                            body: [],
+                        },
+                    ],
+                },
+            ],
+        };
+
+        const output = normalizeEol(generate(program));
+        expect(output).toContain('while ((i < 4)) {');
+    });
+
+    it('given .length on returned array expression, expects fixed numeric size in generated C', () => {
+        const program: Program = {
+            fns: [
+                {
+                    name: 'nums',
+                    params: [],
+                    returnType: 'int32[3]',
+                    body: [
+                        {
+                            kind: 'Return',
+                            value: {
+                                kind: 'ArrayLiteral',
+                                elements: [
+                                    { kind: 'Number', value: 1 },
+                                    { kind: 'Number', value: 2 },
+                                    { kind: 'Number', value: 3 },
+                                ],
+                            },
+                        },
+                    ],
+                },
+                {
+                    name: 'main',
+                    params: [],
+                    returnType: 'int32',
+                    body: [
+                        { kind: 'Print', arg: { kind: 'ArrayLength', array: { kind: 'Call', callee: 'nums', args: [] } } },
+                    ],
+                },
+            ],
+        };
+
+        const output = normalizeEol(generate(program));
+        expect(output).toContain('printf("%ld\\n", (long)(3));');
+    });
+
+    it('given local array initialized from different sized array-returning call, expects throw', () => {
+        const program: Program = {
+            fns: [
+                {
+                    name: 'nums',
+                    params: [],
+                    returnType: 'int32[3]',
+                    body: [
+                        {
+                            kind: 'Return',
+                            value: {
+                                kind: 'ArrayLiteral',
+                                elements: [
+                                    { kind: 'Number', value: 10 },
+                                    { kind: 'Number', value: 20 },
+                                    { kind: 'Number', value: 30 },
+                                ],
+                            },
+                        },
+                    ],
+                },
+                {
+                    name: 'main',
+                    params: [],
+                    returnType: 'int32',
+                    body: [{ kind: 'VarDecl', name: 'local', varType: 'int32', arraySize: 2, init: { kind: 'Call', callee: 'nums', args: [] } }],
+                },
+            ],
+        };
+
+        expect(() => generate(program)).toThrow('Cannot initialize int32[2] from int32[3]');
+    });
 });

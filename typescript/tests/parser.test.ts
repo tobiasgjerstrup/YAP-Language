@@ -51,6 +51,11 @@ describe('Parser', () => {
             expect(prog.fns[0].returnType).toBe('string');
         });
 
+        it('given fn with fixed-size array return type, expects returnType with size suffix', () => {
+            const prog = parse('fn nums() int32[10] { return [1, 2, 3] }');
+            expect(prog.fns[0].returnType).toBe('int32[10]');
+        });
+
         it('given multiple functions, expects all recorded in order', () => {
             const prog = parse('fn a() int32 {} fn b() int32 {}');
             expect(prog.fns.map((f) => f.name)).toEqual(['a', 'b']);
@@ -100,6 +105,17 @@ describe('Parser', () => {
                     init: { kind: 'String', value: 'hi' },
                 });
             });
+
+            it('given fixed-size array declaration, expects VarDecl with arraySize', () => {
+                const prog = parse('fn main() int32 { let arr int32[5] = 0 }');
+                expect(prog.fns[0].body[0]).toEqual({
+                    kind: 'VarDecl',
+                    name: 'arr',
+                    varType: 'int32',
+                    arraySize: 5,
+                    init: { kind: 'Number', value: 0 },
+                });
+            });
         });
 
         describe('Assign', () => {
@@ -108,6 +124,21 @@ describe('Parser', () => {
                 expect(prog.fns[0].body[0]).toEqual({
                     kind: 'Assign',
                     name: 'x',
+                    value: { kind: 'Number', value: 10 },
+                });
+            });
+
+            it('given indexed assignment, expects IndexAssign node', () => {
+                const prog = parse('fn main() int32 { arr[1 + 1] = 10 }');
+                expect(prog.fns[0].body[0]).toEqual({
+                    kind: 'IndexAssign',
+                    array: { kind: 'Ident', name: 'arr' },
+                    index: {
+                        kind: 'Binary',
+                        op: '+',
+                        left: { kind: 'Number', value: 1 },
+                        right: { kind: 'Number', value: 1 },
+                    },
                     value: { kind: 'Number', value: 10 },
                 });
             });
@@ -289,6 +320,57 @@ describe('Parser', () => {
             });
         });
 
+        describe('IndexAccess', () => {
+            it('given indexed expression, expects IndexAccess node', () => {
+                expect(parseExpr('arr[0]')).toEqual({
+                    kind: 'IndexAccess',
+                    array: { kind: 'Ident', name: 'arr' },
+                    index: { kind: 'Number', value: 0 },
+                });
+            });
+
+            it('given nested indexing, expects chained IndexAccess nodes', () => {
+                expect(parseExpr('grid[i][j]')).toEqual({
+                    kind: 'IndexAccess',
+                    array: {
+                        kind: 'IndexAccess',
+                        array: { kind: 'Ident', name: 'grid' },
+                        index: { kind: 'Ident', name: 'i' },
+                    },
+                    index: { kind: 'Ident', name: 'j' },
+                });
+            });
+        });
+
+        describe('ArrayLiteral', () => {
+            it('given array literal expression, expects ArrayLiteral node', () => {
+                expect(parseExpr('[1, 2, 3]')).toEqual({
+                    kind: 'ArrayLiteral',
+                    elements: [
+                        { kind: 'Number', value: 1 },
+                        { kind: 'Number', value: 2 },
+                        { kind: 'Number', value: 3 },
+                    ],
+                });
+            });
+        });
+
+        describe('ArrayLength', () => {
+            it('given local array length expression, expects ArrayLength node', () => {
+                expect(parseExpr('big_array.length')).toEqual({
+                    kind: 'ArrayLength',
+                    array: { kind: 'Ident', name: 'big_array' },
+                });
+            });
+
+            it('given returned array length expression, expects ArrayLength around call expression', () => {
+                expect(parseExpr('return_big_array().length')).toEqual({
+                    kind: 'ArrayLength',
+                    array: { kind: 'Call', callee: 'return_big_array', args: [] },
+                });
+            });
+        });
+
         describe('parentheses', () => {
             it('given parenthesised expression, expects inner expression unwrapped', () => {
                 expect(parseExpr('(42)')).toEqual({ kind: 'Number', value: 42 });
@@ -307,6 +389,14 @@ describe('Parser', () => {
 
         it('given RPAREN where a primary expression is expected, throws parsePrimary unexpected-token error', () => {
             expect(() => parse('fn f() int32 { return ) }')).toThrow("Unexpected token RPAREN (')') at line 1");
+        });
+
+        it('given array declaration without numeric size, expects throw', () => {
+            expect(() => parse('fn main() int32 { let arr int32[] = 0 }')).toThrow("Expected NUMBER but got RBRACKET (']')");
+        });
+
+        it('given unsupported property access, expects throw', () => {
+            expect(() => parse('fn main() int32 { print(arr.size) }')).toThrow("Unsupported property 'size'");
         });
     });
 });

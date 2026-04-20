@@ -108,6 +108,9 @@ describe('lex', () => {
             [')', 'RPAREN'],
             ['{', 'LBRACE'],
             ['}', 'RBRACE'],
+            ['[', 'LBRACKET'],
+            [']', 'RBRACKET'],
+            ['.', 'DOT'],
             [',', 'COMMA'],
             [';', 'SEMI'],
         ] as const)('given "%s", expects %s', (src, expected) => {
