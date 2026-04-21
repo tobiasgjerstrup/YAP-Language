@@ -86,6 +86,33 @@ describe('Parser', () => {
 
     describe('statements', () => {
         describe('VarDecl', () => {
+            it('given let without explicit type and number initializer, expects VarDecl with undefined varType', () => {
+                const prog = parse('fn main() int32 { let x = 5 }');
+                expect(prog.fns[0].body[0]).toEqual({
+                    kind: 'VarDecl',
+                    name: 'x',
+                    varType: undefined,
+                    init: { kind: 'Number', value: 5 },
+                });
+            });
+
+            it('given let without explicit type and array literal, expects inferred-ready VarDecl', () => {
+                const prog = parse('fn main() int32 { let arr = [1, 2, 3] }');
+                expect(prog.fns[0].body[0]).toEqual({
+                    kind: 'VarDecl',
+                    name: 'arr',
+                    varType: undefined,
+                    init: {
+                        kind: 'ArrayLiteral',
+                        elements: [
+                            { kind: 'Number', value: 1 },
+                            { kind: 'Number', value: 2 },
+                            { kind: 'Number', value: 3 },
+                        ],
+                    },
+                });
+            });
+
             it('given let with number, expects VarDecl node', () => {
                 const prog = parse('fn main() int32 { let x int32 = 5 }');
                 expect(prog.fns[0].body[0]).toEqual({

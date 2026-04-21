@@ -11,7 +11,7 @@ export type Expr =
     | { kind: 'IndexAccess'; array: Expr; index: Expr };
 
 export type Stmt =
-    | { kind: 'VarDecl'; name: string; varType: string; init: Expr; arraySize?: number }
+    | { kind: 'VarDecl'; name: string; varType?: string; init: Expr; arraySize?: number }
     | { kind: 'Assign'; name: string; value: Expr }
     | { kind: 'IndexAssign'; array: Expr; index: Expr; value: Expr }
     | { kind: 'Print'; arg: Expr }
@@ -190,14 +190,20 @@ export class Parser {
         if (t.type === 'LET') {
             this.advance();
             const name = this.eat('IDENT').value;
-            const varType = this.eat('IDENT').value;
+            let varType: string | undefined;
             let arraySize: number | undefined;
-            if (this.match('LBRACKET')) {
-                arraySize = Number(this.eat('NUMBER').value);
-                this.eat('RBRACKET');
+            if (!this.check('EQ')) {
+                varType = this.eat('IDENT').value;
+                if (this.match('LBRACKET')) {
+                    arraySize = Number(this.eat('NUMBER').value);
+                    this.eat('RBRACKET');
+                }
             }
             this.eat('EQ');
             const init = this.parseExpr();
+            if (arraySize !== undefined && varType === undefined) {
+                throw new Error(`Array declaration for '${name}' requires an explicit element type`);
+            }
             if (arraySize !== undefined) {
                 return { kind: 'VarDecl', name, varType, init, arraySize };
             }

@@ -148,6 +148,9 @@ function indent(s: string): string {
 function genStmt(stmt: Stmt, varTypes: Map<string, string>, fnReturnTypes: Map<string, string>, ctx: FnCodegenContext): string {
     switch (stmt.kind) {
         case 'VarDecl': {
+            if (!stmt.varType) {
+                throw new Error(`Unresolved variable type for '${stmt.name}'. Run typecheck before code generation.`);
+            }
             if (stmt.arraySize !== undefined) {
                 varTypes.set(stmt.name, `${stmt.varType}[${stmt.arraySize}]`);
                 if (stmt.init.kind === 'ArrayLiteral') {

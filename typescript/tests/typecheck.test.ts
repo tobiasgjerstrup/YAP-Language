@@ -179,6 +179,30 @@ describe('typecheckProgram', () => {
                 `),
             ).not.toThrow();
         });
+
+        it('given inferred int32 and string locals, expects no error', () => {
+            expect(() =>
+                check(`
+                    fn main() {
+                        let x = 20
+                        let s = "hello"
+                        print(x)
+                        print(s)
+                    }
+                `),
+            ).not.toThrow();
+        });
+
+        it('given inferred fixed-size array local, expects no error', () => {
+            expect(() =>
+                check(`
+                    fn main() {
+                        let arr = [1, 2, 3]
+                        print(arr[1])
+                    }
+                `),
+            ).not.toThrow();
+        });
     });
 
     // ─── Type name validation ─────────────────────────────────────────────────
@@ -232,6 +256,16 @@ describe('typecheckProgram', () => {
     // ─── VarDecl type mismatches ──────────────────────────────────────────────
 
     describe('VarDecl type mismatches', () => {
+        it('given inferred empty array literal, expects throw', () => {
+            expect(() =>
+                check(`
+                    fn main() {
+                        let arr = []
+                    }
+                `),
+            ).toThrow('Cannot infer type of empty array literal');
+        });
+
         it('given int32 variable initialized with string, expects throw', () => {
             expect(() =>
                 check(`

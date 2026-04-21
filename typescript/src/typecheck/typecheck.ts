@@ -168,12 +168,29 @@ function checkStmt(
 ): void {
     switch (stmt.kind) {
         case 'VarDecl': {
+            const initType = inferExprType(stmt.init, localScope, fnSigs);
+            if (stmt.varType === undefined) {
+                if (stmt.arraySize !== undefined) {
+                    throw new Error(
+                        `Type mismatch in 'let ${stmt.name}': explicit type is required for fixed-size array declarations`,
+                    );
+                }
+                const inferredArrayType = parseFixedArrayType(initType);
+                if (inferredArrayType) {
+                    stmt.varType = inferredArrayType.baseType;
+                    stmt.arraySize = inferredArrayType.size;
+                } else {
+                    stmt.varType = initType;
+                }
+                localScope.set(stmt.name, initType);
+                break;
+            }
+
             const declaredType = stmt.arraySize !== undefined
                 ? `${stmt.varType}[${stmt.arraySize}]`
                 : stmt.varType;
             validateTypeName(declaredType, `let ${stmt.name}`);
 
-            const initType = inferExprType(stmt.init, localScope, fnSigs);
             if (initType !== declaredType) {
                 throw new Error(
                     `Type mismatch in 'let ${stmt.name}': declared '${declaredType}', initializer is '${initType}'`,
