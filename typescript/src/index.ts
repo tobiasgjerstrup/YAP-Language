@@ -3,6 +3,7 @@ import * as path from 'path';
 import { Parser } from './parser/parser.js';
 import type { FnDecl } from './parser/parser.js';
 import { generate } from './codegen/codegen.js';
+import { typecheckProgram } from './typecheck/typecheck.js';
 
 function resolveImportPath(fromFile: string, importPath: string): string {
     const fromDir = path.dirname(fromFile);
@@ -67,6 +68,7 @@ const outputPath = args[1] ?? path.basename(inputPath, path.extname(inputPath)) 
 
 try {
     const program = loadProgramFromFile(inputPath);
+    typecheckProgram(program);
     const cCode = generate(program);
     fs.writeFileSync(outputPath, cCode, 'utf-8');
     console.log(`Transpiled ${inputPath} -> ${outputPath}`);
