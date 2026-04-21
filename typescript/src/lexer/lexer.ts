@@ -30,6 +30,7 @@ export type TokenType =
     | 'DOT' // '.'
     | 'COMMA' // ','
     | 'SEMI' // ';'
+    | 'BOOLEAN' // true/false literals
     | 'EOF'; // end of file
 
 export interface Token {
@@ -47,6 +48,8 @@ const KEYWORDS: Record<string, TokenType> = {
     return: 'RETURN',
     print: 'PRINT',
     import: 'IMPORT',
+    true: 'BOOLEAN',
+    false: 'BOOLEAN',
 };
 
 /**

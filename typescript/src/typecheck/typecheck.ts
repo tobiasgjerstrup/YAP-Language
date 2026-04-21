@@ -13,8 +13,9 @@ function parseFixedArrayType(t: string): FixedArrayType | null {
     return { baseType: match[1], size: Number(match[2]) };
 }
 
-const BASE_TYPES = new Set(['int32', 'int64', 'string']);
+const BASE_TYPES = new Set(['int32', 'int64', 'string', 'boolean']);
 const NUMERIC_TYPES = new Set(['int32', 'int64']);
+const BOOLEAN_TYPES = new Set(['boolean']);
 
 function validateTypeName(t: string, context: string): void {
     const arr = parseFixedArrayType(t);
@@ -34,6 +35,10 @@ function validateTypeName(t: string, context: string): void {
 
 function isNumeric(t: string): boolean {
     return NUMERIC_TYPES.has(t);
+}
+
+function isBoolean(t: string): boolean {
+    return BOOLEAN_TYPES.has(t);
 }
 
 // ─── Function signature map ───────────────────────────────────────────────────
@@ -155,6 +160,9 @@ function inferExprType(
             }
             return 'int32';
         }
+
+        case 'Boolean':
+            return 'boolean';
     }
 }
 
@@ -261,7 +269,7 @@ function checkStmt(
                     `Cannot print array type '${argType}' directly; print an element instead`,
                 );
             }
-            if (!isNumeric(argType) && argType !== 'string') {
+            if (!isNumeric(argType) && !isBoolean(argType) && argType !== 'string') {
                 throw new Error(`Cannot print value of type '${argType}'`);
             }
             break;
@@ -269,8 +277,8 @@ function checkStmt(
 
         case 'If': {
             const condType = inferExprType(stmt.cond, localScope, fnSigs);
-            if (!isNumeric(condType)) {
-                throw new Error(`'if' condition must be numeric, got '${condType}'`);
+            if (!isNumeric(condType) && !isBoolean(condType)) {
+                throw new Error(`'if' condition must be numeric or boolean, got '${condType}'`);
             }
             for (const s of stmt.then) checkStmt(s, localScope, fnSigs, fnReturnType);
             for (const s of stmt.else_) checkStmt(s, localScope, fnSigs, fnReturnType);

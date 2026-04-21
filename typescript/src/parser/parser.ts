@@ -8,7 +8,8 @@ export type Expr =
     | { kind: 'Call'; callee: string; args: Expr[] }
     | { kind: 'ArrayLiteral'; elements: Expr[] }
     | { kind: 'ArrayLength'; array: Expr }
-    | { kind: 'IndexAccess'; array: Expr; index: Expr };
+    | { kind: 'IndexAccess'; array: Expr; index: Expr }
+    | { kind: 'Boolean'; value: boolean };
 
 export type Stmt =
     | { kind: 'VarDecl'; name: string; varType?: string; init: Expr; arraySize?: number }
@@ -366,6 +367,11 @@ export class Parser {
             const expr = this.parseExpr();
             this.eat('RPAREN');
             return this.parsePostfix(expr, t.line);
+        }
+
+        if (t.type === 'BOOLEAN') {
+            this.advance();
+            return { kind: 'Boolean', value: t.value === 'true' };
         }
 
         throw new Error(`Unexpected token ${t.type} ('${t.value}') at line ${t.line}`);

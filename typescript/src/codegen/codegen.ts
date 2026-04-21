@@ -81,6 +81,7 @@ export function generate(program: Program): string {
     const fnReturnTypes = new Map(program.fns.map((f) => [f.name, f.returnType] as const));
     lines.push('#include <stdio.h>');
     lines.push('#include <stdint.h>');
+    lines.push('#include <stdbool.h>');
     lines.push('');
 
     // Forward-declare all functions except main
@@ -251,6 +252,8 @@ function mapTypeToC(varType: string): string {
             return 'int64_t';
         case 'string':
             return 'char*';
+        case 'boolean':
+            return 'bool';
         default:
             throw new Error(`Unsupported variable type: ${varType}`);
     }
@@ -282,6 +285,13 @@ function genExpr(expr: Expr, varTypes: Map<string, string> = new Map(), fnReturn
         }
         case 'IndexAccess':
             return `${genExpr(expr.array, varTypes, fnReturnTypes)}[${genExpr(expr.index, varTypes, fnReturnTypes)}]`;
+
+        case 'Boolean': {
+            if (expr.value !== true && expr.value !== false) {
+                throw new Error('Invalid boolean value');
+            }
+            return expr.value ? 'true' : 'false';
+        }
     }
 }
 
