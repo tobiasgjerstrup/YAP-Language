@@ -56,6 +56,26 @@ describe('Parser', () => {
             expect(prog.fns[0].returnType).toBe('int32[10]');
         });
 
+        it('given fn with dynamic array return type, expects unsized returnType', () => {
+            const prog = parse('fn nums() int32[] { return [1, 2, 3] }');
+            expect(prog.fns[0].returnType).toBe('int32[]');
+        });
+
+        it('given fn with runtime-sized array return type, expects symbolic returnType', () => {
+            const prog = parse('fn nums(n int32) int32[n] { return [1, 2, 3] }');
+            expect(prog.fns[0].returnType).toBe('int32[n]');
+        });
+
+        it('given fn with array-typed params, expects param types with suffixes', () => {
+            const prog = parse('fn process(staticArr int32[4], dyn int32[], rs int32[n], n int32) int32 { return 0 }');
+            expect(prog.fns[0].params).toEqual([
+                { name: 'staticArr', paramType: 'int32[4]' },
+                { name: 'dyn', paramType: 'int32[]' },
+                { name: 'rs', paramType: 'int32[n]' },
+                { name: 'n', paramType: 'int32' },
+            ]);
+        });
+
         it('given multiple functions, expects all recorded in order', () => {
             const prog = parse('fn a() int32 {} fn b() int32 {}');
             expect(prog.fns.map((f) => f.name)).toEqual(['a', 'b']);
@@ -141,6 +161,43 @@ describe('Parser', () => {
                     varType: 'int32',
                     arraySize: 5,
                     init: { kind: 'Number', value: 0 },
+                });
+            });
+
+            it('given dynamic array declaration, expects VarDecl with dynamicArray flag', () => {
+                const prog = parse('fn main() int32 { let arr int32[] = [1, 2, 3] }');
+                expect(prog.fns[0].body[0]).toEqual({
+                    kind: 'VarDecl',
+                    name: 'arr',
+                    varType: 'int32',
+                    dynamicArray: true,
+                    init: {
+                        kind: 'ArrayLiteral',
+                        elements: [
+                            { kind: 'Number', value: 1 },
+                            { kind: 'Number', value: 2 },
+                            { kind: 'Number', value: 3 },
+                        ],
+                    },
+                });
+            });
+
+            it('given runtime-sized declaration, expects VarDecl with arraySizeName', () => {
+                const prog = parse('fn main() int32 { let n int32 = 3 let arr int32[n] = [1, 2, 3] }');
+                expect(prog.fns[0].body[1]).toEqual({
+                    kind: 'VarDecl',
+                    name: 'arr',
+                    varType: 'int32',
+                    dynamicArray: true,
+                    arraySizeName: 'n',
+                    init: {
+                        kind: 'ArrayLiteral',
+                        elements: [
+                            { kind: 'Number', value: 1 },
+                            { kind: 'Number', value: 2 },
+                            { kind: 'Number', value: 3 },
+                        ],
+                    },
                 });
             });
         });
@@ -398,6 +455,23 @@ describe('Parser', () => {
             });
         });
 
+        describe('ArrayPush / ArrayPop', () => {
+            it('given push expression, expects ArrayPush node', () => {
+                expect(parseExpr('arr.push(42)')).toEqual({
+                    kind: 'ArrayPush',
+                    array: { kind: 'Ident', name: 'arr' },
+                    value: { kind: 'Number', value: 42 },
+                });
+            });
+
+            it('given pop expression, expects ArrayPop node', () => {
+                expect(parseExpr('arr.pop()')).toEqual({
+                    kind: 'ArrayPop',
+                    array: { kind: 'Ident', name: 'arr' },
+                });
+            });
+        });
+
         describe('parentheses', () => {
             it('given parenthesised expression, expects inner expression unwrapped', () => {
                 expect(parseExpr('(42)')).toEqual({ kind: 'Number', value: 42 });
@@ -418,8 +492,18 @@ describe('Parser', () => {
             expect(() => parse('fn f() int32 { return ) }')).toThrow("Unexpected token RPAREN (')') at line 1");
         });
 
-        it('given array declaration without numeric size, expects throw', () => {
-            expect(() => parse('fn main() int32 { let arr int32[] = 0 }')).toThrow("Expected NUMBER but got RBRACKET (']')");
+        it('given array declaration with invalid size token, expects throw', () => {
+            expect(() => parse('fn main() int32 { let arr int32[+] = 0 }')).toThrow(
+                "Expected array size identifier, number, or ']'",
+            );
+        });
+
+        it('given push call with no args, expects throw', () => {
+            expect(() => parse('fn main() int32 { arr.push() }')).toThrow("'push' expects exactly one argument");
+        });
+
+        it('given pop call with args, expects throw', () => {
+            expect(() => parse('fn main() int32 { arr.pop(1) }')).toThrow("'pop' does not take arguments");
         });
 
         it('given unsupported property access, expects throw', () => {

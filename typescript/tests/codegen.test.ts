@@ -510,4 +510,112 @@ describe('codegen.generate', () => {
 
         expect(() => generate(program)).toThrow('Cannot initialize int32[2] from int32[3]');
     });
+
+    it('given dynamic array declaration, push/pop, and length, expects runtime helper-based output', () => {
+        const program: Program = {
+            fns: [
+                {
+                    name: 'main',
+                    params: [],
+                    returnType: 'int32',
+                    body: [
+                        {
+                            kind: 'VarDecl',
+                            name: 'arr',
+                            varType: 'int32',
+                            dynamicArray: true,
+                            init: {
+                                kind: 'ArrayLiteral',
+                                elements: [
+                                    { kind: 'Number', value: 1 },
+                                    { kind: 'Number', value: 2 },
+                                ],
+                            },
+                        },
+                        {
+                            kind: 'ExprStmt',
+                            expr: {
+                                kind: 'ArrayPush',
+                                array: { kind: 'Ident', name: 'arr' },
+                                value: { kind: 'Number', value: 3 },
+                            },
+                        },
+                        {
+                            kind: 'Print',
+                            arg: {
+                                kind: 'ArrayLength',
+                                array: { kind: 'Ident', name: 'arr' },
+                            },
+                        },
+                        {
+                            kind: 'Print',
+                            arg: {
+                                kind: 'ArrayPop',
+                                array: { kind: 'Ident', name: 'arr' },
+                            },
+                        },
+                    ],
+                },
+            ],
+        };
+
+        const output = normalizeEol(generate(program));
+        expect(output).toContain('#include <stdlib.h>');
+        expect(output).toContain('typedef struct {');
+        expect(output).toContain('} yap_array_int32;');
+        expect(output).toContain('yap_array_int32 arr = yap_array_int32_from_values((int32_t[]){1, 2}, 2);');
+        expect(output).toContain('yap_array_int32_push(&arr, 3);');
+        expect(output).toContain('printf("%ld\\n", (long)(arr.length));');
+        expect(output).toContain('printf("%ld\\n", (long)(yap_array_int32_pop(&arr)));');
+        expect(output).toContain('yap_array_int32_free(&arr);');
+    });
+
+    it('given dynamic array return type, expects struct-based function signature', () => {
+        const program: Program = {
+            fns: [
+                {
+                    name: 'nums',
+                    params: [],
+                    returnType: 'int32[]',
+                    body: [
+                        {
+                            kind: 'VarDecl',
+                            name: 'arr',
+                            varType: 'int32',
+                            dynamicArray: true,
+                            init: {
+                                kind: 'ArrayLiteral',
+                                elements: [
+                                    { kind: 'Number', value: 1 },
+                                    { kind: 'Number', value: 2 },
+                                ],
+                            },
+                        },
+                        { kind: 'Return', value: { kind: 'Ident', name: 'arr' } },
+                    ],
+                },
+                {
+                    name: 'main',
+                    params: [],
+                    returnType: 'int32',
+                    body: [
+                        {
+                            kind: 'VarDecl',
+                            name: 'vals',
+                            varType: 'int32',
+                            dynamicArray: true,
+                            init: { kind: 'Call', callee: 'nums', args: [] },
+                        },
+                        { kind: 'Print', arg: { kind: 'ArrayLength', array: { kind: 'Ident', name: 'vals' } } },
+                    ],
+                },
+            ],
+        };
+
+        const output = normalizeEol(generate(program));
+        expect(output).toContain('yap_array_int32 nums(void);');
+        expect(output).toContain('yap_array_int32 nums(void) {');
+        expect(output).toContain('return arr;');
+        expect(output).toContain('yap_array_int32 vals = nums();');
+    });
 });

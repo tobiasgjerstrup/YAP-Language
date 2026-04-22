@@ -203,6 +203,47 @@ describe('typecheckProgram', () => {
                 `),
             ).not.toThrow();
         });
+
+        it('given dynamic array declaration and push/pop usage, expects no error', () => {
+            expect(() =>
+                check(`
+                    fn main() {
+                        let arr int32[] = [1, 2, 3]
+                        let after_push int32 = arr.push(4)
+                        let last int32 = arr.pop()
+                        print(after_push)
+                        print(last)
+                    }
+                `),
+            ).not.toThrow();
+        });
+
+        it('given symbolic array declaration with numeric size variable, expects no error', () => {
+            expect(() =>
+                check(`
+                    fn main() {
+                        let n int32 = 3
+                        let arr int32[n] = [1, 2, 3]
+                        print(arr.length)
+                    }
+                `),
+            ).not.toThrow();
+        });
+
+        it('given fixed array passed to dynamic-array parameter, expects no error', () => {
+            expect(() =>
+                check(`
+                    fn consume(arr int32[]) int32 {
+                        return arr.length
+                    }
+                    fn main() {
+                        let fixed int32[3] = [1, 2, 3]
+                        let n int32 = consume(fixed)
+                        print(n)
+                    }
+                `),
+            ).not.toThrow();
+        });
     });
 
     // ─── Type name validation ─────────────────────────────────────────────────
@@ -557,6 +598,38 @@ describe('typecheckProgram', () => {
                     }
                 `),
             ).toThrow("'.length' requires an array type");
+        });
+
+        it('given push on fixed-size array, expects throw', () => {
+            expect(() =>
+                check(`
+                    fn main() {
+                        let arr int32[3] = [1, 2, 3]
+                        arr.push(4)
+                    }
+                `),
+            ).toThrow("'.push' requires a dynamic array type");
+        });
+
+        it('given pop on fixed-size array, expects throw', () => {
+            expect(() =>
+                check(`
+                    fn main() {
+                        let arr int32[3] = [1, 2, 3]
+                        let x int32 = arr.pop()
+                    }
+                `),
+            ).toThrow("'.pop' requires a dynamic array type");
+        });
+
+        it('given symbolic array declaration with unknown size variable, expects throw', () => {
+            expect(() =>
+                check(`
+                    fn main() {
+                        let arr int32[n] = [1, 2, 3]
+                    }
+                `),
+            ).toThrow("Unknown array size variable 'n'");
         });
     });
 

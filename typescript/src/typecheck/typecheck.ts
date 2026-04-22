@@ -7,10 +7,60 @@ interface FixedArrayType {
     size: number;
 }
 
+interface DynamicArrayType {
+    baseType: string;
+}
+
+interface SymbolicArrayType {
+    baseType: string;
+    sizeName: string;
+}
+
 function parseFixedArrayType(t: string): FixedArrayType | null {
     const match = t.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\[(\d+)\]$/);
     if (!match) return null;
     return { baseType: match[1], size: Number(match[2]) };
+}
+
+function parseDynamicArrayType(t: string): DynamicArrayType | null {
+    const match = t.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\[\]$/);
+    if (!match) return null;
+    return { baseType: match[1] };
+}
+
+function parseSymbolicArrayType(t: string): SymbolicArrayType | null {
+    const match = t.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\[([a-zA-Z_][a-zA-Z0-9_]*)\]$/);
+    if (!match) return null;
+    if (/^\d+$/.test(match[2])) {
+        return null;
+    }
+    return { baseType: match[1], sizeName: match[2] };
+}
+
+function parseAnyArrayType(t: string): FixedArrayType | DynamicArrayType | SymbolicArrayType | null {
+    return parseFixedArrayType(t) ?? parseDynamicArrayType(t) ?? parseSymbolicArrayType(t);
+}
+
+function isAssignableType(sourceType: string, targetType: string): boolean {
+    if (sourceType === targetType) {
+        return true;
+    }
+
+    const sourceArray = parseAnyArrayType(sourceType);
+    const targetArray = parseAnyArrayType(targetType);
+    if (!sourceArray || !targetArray) {
+        return false;
+    }
+
+    if (sourceArray.baseType !== targetArray.baseType) {
+        return false;
+    }
+
+    if (parseFixedArrayType(targetType)) {
+        return false;
+    }
+
+    return true;
 }
 
 const BASE_TYPES = new Set(['int32', 'int64', 'string', 'boolean']);
@@ -25,6 +75,20 @@ function validateTypeName(t: string, context: string): void {
         }
         if (arr.size <= 0) {
             throw new Error(`Array size must be positive, got ${arr.size} (in ${context})`);
+        }
+        return;
+    }
+    const dynamicArr = parseDynamicArrayType(t);
+    if (dynamicArr) {
+        if (!BASE_TYPES.has(dynamicArr.baseType)) {
+            throw new Error(`Unknown type: ${dynamicArr.baseType} (in ${context})`);
+        }
+        return;
+    }
+    const symbolicArr = parseSymbolicArrayType(t);
+    if (symbolicArr) {
+        if (!BASE_TYPES.has(symbolicArr.baseType)) {
+            throw new Error(`Unknown type: ${symbolicArr.baseType} (in ${context})`);
         }
         return;
     }
@@ -114,7 +178,7 @@ function inferExprType(
             for (let i = 0; i < expr.args.length; i++) {
                 const argType = inferExprType(expr.args[i], localScope, fnSigs);
                 const paramType = sig.params[i].paramType;
-                if (argType !== paramType) {
+                if (!isAssignableType(argType, paramType)) {
                     throw new Error(
                         `Argument ${i + 1} of '${expr.callee}' expects '${paramType}', got '${argType}'`,
                     );
@@ -141,7 +205,7 @@ function inferExprType(
 
         case 'IndexAccess': {
             const arrayType = inferExprType(expr.array, localScope, fnSigs);
-            const arr = parseFixedArrayType(arrayType);
+            const arr = parseAnyArrayType(arrayType);
             if (!arr) {
                 throw new Error(`Cannot index into non-array type '${arrayType}'`);
             }
@@ -154,11 +218,33 @@ function inferExprType(
 
         case 'ArrayLength': {
             const arrayType = inferExprType(expr.array, localScope, fnSigs);
-            const arr = parseFixedArrayType(arrayType);
+            const arr = parseAnyArrayType(arrayType);
             if (!arr) {
                 throw new Error(`'.length' requires an array type, got '${arrayType}'`);
             }
             return 'int32';
+        }
+
+        case 'ArrayPush': {
+            const arrayType = inferExprType(expr.array, localScope, fnSigs);
+            const dynamicArr = parseDynamicArrayType(arrayType) ?? parseSymbolicArrayType(arrayType);
+            if (!dynamicArr) {
+                throw new Error(`'.push' requires a dynamic array type, got '${arrayType}'`);
+            }
+            const valueType = inferExprType(expr.value, localScope, fnSigs);
+            if (valueType !== dynamicArr.baseType) {
+                throw new Error(`'.push' expects '${dynamicArr.baseType}', got '${valueType}'`);
+            }
+            return 'int32';
+        }
+
+        case 'ArrayPop': {
+            const arrayType = inferExprType(expr.array, localScope, fnSigs);
+            const dynamicArr = parseDynamicArrayType(arrayType) ?? parseSymbolicArrayType(arrayType);
+            if (!dynamicArr) {
+                throw new Error(`'.pop' requires a dynamic array type, got '${arrayType}'`);
+            }
+            return dynamicArr.baseType;
         }
 
         case 'Boolean':
@@ -178,7 +264,7 @@ function checkStmt(
         case 'VarDecl': {
             const initType = inferExprType(stmt.init, localScope, fnSigs);
             if (stmt.varType === undefined) {
-                if (stmt.arraySize !== undefined) {
+                if (stmt.arraySize !== undefined || stmt.arraySizeName !== undefined || stmt.dynamicArray) {
                     throw new Error(
                         `Type mismatch in 'let ${stmt.name}': explicit type is required for fixed-size array declarations`,
                     );
@@ -196,10 +282,24 @@ function checkStmt(
 
             const declaredType = stmt.arraySize !== undefined
                 ? `${stmt.varType}[${stmt.arraySize}]`
-                : stmt.varType;
+                : stmt.arraySizeName !== undefined
+                  ? `${stmt.varType}[${stmt.arraySizeName}]`
+                  : stmt.dynamicArray
+                    ? `${stmt.varType}[]`
+                    : stmt.varType;
             validateTypeName(declaredType, `let ${stmt.name}`);
 
-            if (initType !== declaredType) {
+            if (stmt.arraySizeName !== undefined) {
+                const sizeType = localScope.get(stmt.arraySizeName);
+                if (!sizeType) {
+                    throw new Error(`Unknown array size variable '${stmt.arraySizeName}' in declaration of '${stmt.name}'`);
+                }
+                if (!isNumeric(sizeType)) {
+                    throw new Error(`Array size variable '${stmt.arraySizeName}' must be numeric, got '${sizeType}'`);
+                }
+            }
+
+            if (!isAssignableType(initType, declaredType)) {
                 throw new Error(
                     `Type mismatch in 'let ${stmt.name}': declared '${declaredType}', initializer is '${initType}'`,
                 );
@@ -214,7 +314,7 @@ function checkStmt(
                 throw new Error(`Assignment to unknown variable '${stmt.name}'`);
             }
             const valueType = inferExprType(stmt.value, localScope, fnSigs);
-            if (valueType !== varType) {
+            if (!isAssignableType(valueType, varType)) {
                 throw new Error(
                     `Type mismatch in assignment to '${stmt.name}': expected '${varType}', got '${valueType}'`,
                 );
@@ -253,7 +353,7 @@ function checkStmt(
                     valueArr !== null &&
                     declaredArr.baseType === valueArr.baseType &&
                     valueArr.size <= declaredArr.size;
-                if (!partialArrayReturn) {
+                if (!partialArrayReturn && !isAssignableType(valueType, fnReturnType)) {
                     throw new Error(
                         `Return type mismatch: function declares '${fnReturnType}', returning '${valueType}'`,
                     );
@@ -264,7 +364,7 @@ function checkStmt(
 
         case 'Print': {
             const argType = inferExprType(stmt.arg, localScope, fnSigs);
-            if (parseFixedArrayType(argType)) {
+            if (parseAnyArrayType(argType)) {
                 throw new Error(
                     `Cannot print array type '${argType}' directly; print an element instead`,
                 );

@@ -8,11 +8,21 @@ export type Expr =
     | { kind: 'Call'; callee: string; args: Expr[] }
     | { kind: 'ArrayLiteral'; elements: Expr[] }
     | { kind: 'ArrayLength'; array: Expr }
+    | { kind: 'ArrayPush'; array: Expr; value: Expr }
+    | { kind: 'ArrayPop'; array: Expr }
     | { kind: 'IndexAccess'; array: Expr; index: Expr }
     | { kind: 'Boolean'; value: boolean };
 
 export type Stmt =
-    | { kind: 'VarDecl'; name: string; varType?: string; init: Expr; arraySize?: number }
+    | {
+          kind: 'VarDecl';
+          name: string;
+          varType?: string;
+          init: Expr;
+          arraySize?: number;
+          arraySizeName?: string;
+          dynamicArray?: boolean;
+      }
     | { kind: 'Assign'; name: string; value: Expr }
     | { kind: 'IndexAssign'; array: Expr; index: Expr; value: Expr }
     | { kind: 'Print'; arg: Expr }
@@ -24,6 +34,14 @@ export type Stmt =
 export interface ParamDecl {
     name: string;
     paramType: string;
+}
+
+interface ParsedTypeAnnotation {
+    baseType: string;
+    fullType: string;
+    arraySize?: number;
+    arraySizeName?: string;
+    dynamicArray?: boolean;
 }
 
 export interface FnDecl {
@@ -88,6 +106,46 @@ export class Parser {
         return false;
     }
 
+    private parseTypeAnnotation(): ParsedTypeAnnotation {
+        const baseType = this.eat('IDENT').value;
+
+        if (!this.match('LBRACKET')) {
+            return { baseType, fullType: baseType };
+        }
+
+        if (this.match('RBRACKET')) {
+            return {
+                baseType,
+                fullType: `${baseType}[]`,
+                dynamicArray: true,
+            };
+        }
+
+        if (this.check('NUMBER')) {
+            const sizeToken = this.advance();
+            this.eat('RBRACKET');
+            return {
+                baseType,
+                fullType: `${baseType}[${sizeToken.value}]`,
+                arraySize: Number(sizeToken.value),
+            };
+        }
+
+        if (this.check('IDENT')) {
+            const sizeName = this.advance().value;
+            this.eat('RBRACKET');
+            return {
+                baseType,
+                fullType: `${baseType}[${sizeName}]`,
+                arraySizeName: sizeName,
+                dynamicArray: true,
+            };
+        }
+
+        const t = this.peek();
+        throw new Error(`Expected array size identifier, number, or ']' but got ${t.type} ('${t.value}') at line ${t.line}`);
+    }
+
     // ── Grammar ─────────────────────────────────────────────────────────────────
 
     /**
@@ -135,14 +193,18 @@ export class Parser {
         this.eat('LPAREN');
         const params: ParamDecl[] = [];
         if (!this.check('RPAREN')) {
+            const firstParamName = this.eat('IDENT').value;
+            const firstParamType = this.parseTypeAnnotation();
             params.push({
-                name: this.eat('IDENT').value,
-                paramType: this.eat('IDENT').value,
+                name: firstParamName,
+                paramType: firstParamType.fullType,
             });
             while (this.match('COMMA')) {
+                const paramName = this.eat('IDENT').value;
+                const paramType = this.parseTypeAnnotation();
                 params.push({
-                    name: this.eat('IDENT').value,
-                    paramType: this.eat('IDENT').value,
+                    name: paramName,
+                    paramType: paramType.fullType,
                 });
             }
         }
@@ -150,12 +212,7 @@ export class Parser {
 
         let returnType = 'int32';
         if (this.check('IDENT')) {
-            returnType = this.eat('IDENT').value;
-            if (this.match('LBRACKET')) {
-                const size = this.eat('NUMBER').value;
-                this.eat('RBRACKET');
-                returnType = `${returnType}[${size}]`;
-            }
+            returnType = this.parseTypeAnnotation().fullType;
         } else if (name !== 'main') {
             throw new Error(`Function '${name}' must declare a return type`);
         }
@@ -193,20 +250,32 @@ export class Parser {
             const name = this.eat('IDENT').value;
             let varType: string | undefined;
             let arraySize: number | undefined;
+            let arraySizeName: string | undefined;
+            let dynamicArray: boolean | undefined;
             if (!this.check('EQ')) {
-                varType = this.eat('IDENT').value;
-                if (this.match('LBRACKET')) {
-                    arraySize = Number(this.eat('NUMBER').value);
-                    this.eat('RBRACKET');
-                }
+                const parsedType = this.parseTypeAnnotation();
+                varType = parsedType.baseType;
+                arraySize = parsedType.arraySize;
+                arraySizeName = parsedType.arraySizeName;
+                dynamicArray = parsedType.dynamicArray;
             }
             this.eat('EQ');
             const init = this.parseExpr();
             if (arraySize !== undefined && varType === undefined) {
                 throw new Error(`Array declaration for '${name}' requires an explicit element type`);
             }
-            if (arraySize !== undefined) {
-                return { kind: 'VarDecl', name, varType, init, arraySize };
+            if (arraySize !== undefined || arraySizeName !== undefined || dynamicArray) {
+                const varDecl: Extract<Stmt, { kind: 'VarDecl' }> = { kind: 'VarDecl', name, varType, init };
+                if (arraySize !== undefined) {
+                    varDecl.arraySize = arraySize;
+                }
+                if (arraySizeName !== undefined) {
+                    varDecl.arraySizeName = arraySizeName;
+                }
+                if (dynamicArray) {
+                    varDecl.dynamicArray = true;
+                }
+                return varDecl;
             }
             return { kind: 'VarDecl', name, varType, init };
         }
@@ -406,11 +475,35 @@ export class Parser {
             if (this.check('DOT')) {
                 this.advance();
                 const property = this.eat('IDENT');
+                if (property.value === 'length') {
+                    expr = { kind: 'ArrayLength', array: expr };
+                    continue;
+                }
+                if (property.value === 'push') {
+                    this.eat('LPAREN');
+                    if (this.check('RPAREN')) {
+                        throw new Error(`'push' expects exactly one argument at line ${property.line}`);
+                    }
+                    const value = this.parseExpr();
+                    if (this.match('COMMA')) {
+                        throw new Error(`'push' expects exactly one argument at line ${property.line}`);
+                    }
+                    this.eat('RPAREN');
+                    expr = { kind: 'ArrayPush', array: expr, value };
+                    continue;
+                }
+                if (property.value === 'pop') {
+                    this.eat('LPAREN');
+                    if (!this.check('RPAREN')) {
+                        throw new Error(`'pop' does not take arguments at line ${property.line}`);
+                    }
+                    this.eat('RPAREN');
+                    expr = { kind: 'ArrayPop', array: expr };
+                    continue;
+                }
                 if (property.value !== 'length') {
                     throw new Error(`Unsupported property '${property.value}' at line ${property.line}`);
                 }
-                expr = { kind: 'ArrayLength', array: expr };
-                continue;
             }
 
             break;
