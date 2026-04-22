@@ -79,6 +79,7 @@ function isStringExpr(expr: Expr, varTypes: Map<string, string>, fnReturnTypes: 
 export function generate(program: Program): string {
     const lines: string[] = [];
     const fnReturnTypes = new Map(program.fns.map((f) => [f.name, f.returnType] as const));
+    // TODO: Only include headers that are actually needed based on the program features used.
     lines.push('#include <stdio.h>');
     lines.push('#include <stdint.h>');
     lines.push('#include <stdbool.h>');
