@@ -218,6 +218,18 @@ describe('typecheckProgram', () => {
             ).not.toThrow();
         });
 
+        it('given dynamic array declaration initialized with empty literal, expects no error', () => {
+            expect(() =>
+                check(`
+                    fn main() {
+                        let arr int32[] = []
+                        let n int32 = arr.length
+                        print(n)
+                    }
+                `),
+            ).not.toThrow();
+        });
+
         it('given symbolic array declaration with numeric size variable, expects no error', () => {
             expect(() =>
                 check(`

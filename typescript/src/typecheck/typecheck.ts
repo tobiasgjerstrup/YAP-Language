@@ -262,8 +262,8 @@ function checkStmt(
 ): void {
     switch (stmt.kind) {
         case 'VarDecl': {
-            const initType = inferExprType(stmt.init, localScope, fnSigs);
             if (stmt.varType === undefined) {
+                const initType = inferExprType(stmt.init, localScope, fnSigs);
                 if (stmt.arraySize !== undefined || stmt.arraySizeName !== undefined || stmt.dynamicArray) {
                     throw new Error(
                         `Type mismatch in 'let ${stmt.name}': explicit type is required for fixed-size array declarations`,
@@ -288,6 +288,20 @@ function checkStmt(
                     ? `${stmt.varType}[]`
                     : stmt.varType;
             validateTypeName(declaredType, `let ${stmt.name}`);
+
+            let initType: string;
+            if (stmt.init.kind === 'ArrayLiteral' && stmt.init.elements.length === 0) {
+                const declaredFixed = parseFixedArrayType(declaredType);
+                if (declaredFixed) {
+                    initType = `${declaredFixed.baseType}[0]`;
+                } else if (parseDynamicArrayType(declaredType) || parseSymbolicArrayType(declaredType)) {
+                    initType = declaredType;
+                } else {
+                    throw new Error('Cannot infer type of empty array literal');
+                }
+            } else {
+                initType = inferExprType(stmt.init, localScope, fnSigs);
+            }
 
             if (stmt.arraySizeName !== undefined) {
                 const sizeType = localScope.get(stmt.arraySizeName);
