@@ -102,7 +102,7 @@ function stmtHasPrint(stmt: Stmt): boolean {
 function stmtHasBooleanUsage(stmt: Stmt): boolean {
     switch (stmt.kind) {
         case 'VarDecl':
-            return typeUsesBase(stmt.varType, 'boolean') || exprHasBooleanLiteral(stmt.init);
+            return (stmt.varType !== undefined && typeUsesBase(stmt.varType, 'boolean')) || exprHasBooleanLiteral(stmt.init);
         case 'Assign':
             return exprHasBooleanLiteral(stmt.value);
         case 'IndexAssign':
@@ -273,7 +273,10 @@ export function generate(program: Program): string {
                 return true;
             }
             return fn.body.some(
-                (stmt) => stmt.kind === 'VarDecl' && (typeUsesBase(stmt.varType, 'int32') || typeUsesBase(stmt.varType, 'int64')),
+                (stmt) =>
+                    stmt.kind === 'VarDecl' &&
+                    stmt.varType !== undefined &&
+                    (typeUsesBase(stmt.varType, 'int32') || typeUsesBase(stmt.varType, 'int64')),
             );
         });
     const usesStdbool =
