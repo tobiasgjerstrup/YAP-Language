@@ -19,7 +19,7 @@ type AnyArrayType = FixedArrayType | DynamicArrayType | SymbolicArrayType;
 interface FnCodegenContext {
     fnReturnType: string;
     fnReturnArray: (FixedArrayType & { bufferName: string }) | null;
-    ownedDynamicArrays: Set<string>;
+    ownedDynamicArrays: Map<string, string>; // variable name -> base type
 }
 
 function parseFixedArrayType(typeName: string): FixedArrayType | null {
@@ -124,11 +124,119 @@ function stmtHasBooleanUsage(stmt: Stmt): boolean {
     }
 }
 
-function mapArrayTypeToC(arrayType: DynamicArrayType | SymbolicArrayType): string {
-    if (arrayType.baseType === 'int32') {
-        return 'yap_array_int32';
+function getDynamicArrayCElemType(baseType: string): string {
+    switch (baseType) {
+        case 'int32': return 'int32_t';
+        case 'int64': return 'int64_t';
+        case 'string': return 'char*';
+        case 'boolean': return 'bool';
+        default: throw new Error(`Dynamic arrays not supported for type: ${baseType}`);
     }
-    throw new Error(`Dynamic arrays are currently only supported for int32, got ${arrayType.baseType}[]`);
+}
+
+function getDynamicArrayCElemPtrType(baseType: string): string {
+    switch (baseType) {
+        case 'int32': return 'int32_t*';
+        case 'int64': return 'int64_t*';
+        case 'string': return 'char**';
+        case 'boolean': return 'bool*';
+        default: throw new Error(`Dynamic arrays not supported for type: ${baseType}`);
+    }
+}
+
+function getDynamicArrayCConstInputType(baseType: string): string {
+    switch (baseType) {
+        case 'int32': return 'const int32_t*';
+        case 'int64': return 'const int64_t*';
+        case 'string': return 'const char**';
+        case 'boolean': return 'const bool*';
+        default: throw new Error(`Dynamic arrays not supported for type: ${baseType}`);
+    }
+}
+
+function getDynamicArrayCompoundLiteralType(baseType: string): string {
+    switch (baseType) {
+        case 'int32': return 'int32_t[]';
+        case 'int64': return 'int64_t[]';
+        case 'string': return 'const char*[]';
+        case 'boolean': return 'bool[]';
+        default: throw new Error(`Dynamic arrays not supported for type: ${baseType}`);
+    }
+}
+
+function getDynamicArrayPopZeroValue(baseType: string): string {
+    switch (baseType) {
+        case 'int32': return '0';
+        case 'int64': return '0';
+        case 'string': return 'NULL';
+        case 'boolean': return 'false';
+        default: throw new Error(`Dynamic arrays not supported for type: ${baseType}`);
+    }
+}
+
+function mapArrayTypeToC(arrayType: DynamicArrayType | SymbolicArrayType): string {
+    getDynamicArrayCElemType(arrayType.baseType); // validate
+    return `yap_array_${arrayType.baseType}`;
+}
+
+function emitDynamicArrayHelpers(baseType: string): string[] {
+    const structName = `yap_array_${baseType}`;
+    const elemType = getDynamicArrayCElemType(baseType);
+    const elemPtrType = getDynamicArrayCElemPtrType(baseType);
+    const constInputType = getDynamicArrayCConstInputType(baseType);
+    const zeroVal = getDynamicArrayPopZeroValue(baseType);
+    const lines: string[] = [];
+    lines.push('typedef struct {');
+    lines.push(`    ${elemPtrType} data;`);
+    lines.push('    int32_t length;');
+    lines.push('    int32_t capacity;');
+    lines.push(`} ${structName};`);
+    lines.push('');
+    lines.push(`static ${structName} ${structName}_with_capacity(int32_t capacity) {`);
+    lines.push(`    ${structName} arr;`);
+    lines.push('    arr.length = 0;');
+    lines.push('    arr.capacity = capacity > 0 ? capacity : 1;');
+    lines.push(`    arr.data = (${elemPtrType})malloc((size_t)arr.capacity * sizeof(${elemType}));`);
+    lines.push('    return arr;');
+    lines.push('}');
+    lines.push('');
+    lines.push(`static ${structName} ${structName}_from_values(${constInputType} values, int32_t length) {`);
+    lines.push(`    ${structName} arr = ${structName}_with_capacity(length > 0 ? length : 1);`);
+    lines.push('    for (int32_t i = 0; i < length; i++) {');
+    lines.push('        arr.data[i] = values[i];');
+    lines.push('    }');
+    lines.push('    arr.length = length;');
+    lines.push('    return arr;');
+    lines.push('}');
+    lines.push('');
+    lines.push(`static void ${structName}_reserve(${structName}* arr, int32_t needed) {`);
+    lines.push('    if (arr->capacity >= needed) return;');
+    lines.push('    int32_t next = arr->capacity;');
+    lines.push('    while (next < needed) next *= 2;');
+    lines.push(`    arr->data = (${elemPtrType})realloc(arr->data, (size_t)next * sizeof(${elemType}));`);
+    lines.push('    arr->capacity = next;');
+    lines.push('}');
+    lines.push('');
+    lines.push(`static int32_t ${structName}_push(${structName}* arr, ${elemType} value) {`);
+    lines.push(`    ${structName}_reserve(arr, arr->length + 1);`);
+    lines.push('    arr->data[arr->length++] = value;');
+    lines.push('    return arr->length;');
+    lines.push('}');
+    lines.push('');
+    lines.push(`static ${elemType} ${structName}_pop(${structName}* arr) {`);
+    lines.push(`    if (arr->length <= 0) return ${zeroVal};`);
+    lines.push('    arr->length -= 1;');
+    lines.push('    return arr->data[arr->length];');
+    lines.push('}');
+    lines.push('');
+    lines.push(`static void ${structName}_free(${structName}* arr) {`);
+    lines.push('    free(arr->data);');
+    lines.push('    arr->data = NULL;');
+    lines.push('    arr->length = 0;');
+    lines.push('    arr->capacity = 0;');
+    lines.push('}');
+    lines.push('');
+    return lines;
 }
 
 function mapReturnTypeToC(returnType: string): string {
@@ -245,26 +353,24 @@ function isStringExpr(expr: Expr, varTypes: Map<string, string>, fnReturnTypes: 
 export function generate(program: Program): string {
     const lines: string[] = [];
     const fnReturnTypes = new Map(program.fns.map((f) => [f.name, f.returnType] as const));
-    const usesDynamicInt32 =
-        program.fns.some((fn) => {
-            if (isDynamicLikeArrayType(fn.returnType)) {
-                return fn.returnType.startsWith('int32[');
+    const usedDynamicBaseTypes = new Set<string>();
+    for (const fn of program.fns) {
+        const retDyn = parseDynamicArrayType(fn.returnType) ?? parseSymbolicArrayType(fn.returnType);
+        if (retDyn) usedDynamicBaseTypes.add(retDyn.baseType);
+        for (const p of fn.params) {
+            const paramDyn = parseDynamicArrayType(p.paramType) ?? parseSymbolicArrayType(p.paramType);
+            if (paramDyn) usedDynamicBaseTypes.add(paramDyn.baseType);
+        }
+        for (const stmt of fn.body) {
+            if (stmt.kind === 'VarDecl' && (stmt.dynamicArray || stmt.arraySizeName !== undefined) && stmt.varType) {
+                usedDynamicBaseTypes.add(stmt.varType);
             }
-            if (fn.params.some((p) => isDynamicLikeArrayType(p.paramType) && p.paramType.startsWith('int32['))) {
-                return true;
-            }
-            return fn.body.some((stmt) => stmt.kind === 'VarDecl' && stmt.dynamicArray && stmt.varType === 'int32');
-        }) ||
-        program.fns.some((fn) =>
-            fn.body.some(
-                (stmt) =>
-                    (stmt.kind === 'ExprStmt' && (stmt.expr.kind === 'ArrayPush' || stmt.expr.kind === 'ArrayPop')) ||
-                    (stmt.kind === 'Return' && (stmt.value.kind === 'ArrayPush' || stmt.value.kind === 'ArrayPop')),
-            ),
-        );
+        }
+    }
+    const usesAnyDynamicArray = usedDynamicBaseTypes.size > 0;
     const usesPrint = program.fns.some((fn) => fn.body.some(stmtHasPrint));
     const usesStdint =
-        usesDynamicInt32 ||
+        usesAnyDynamicArray ||
         program.fns.some((fn) => {
             if (typeUsesBase(fn.returnType, 'int32') || typeUsesBase(fn.returnType, 'int64')) {
                 return true;
@@ -292,62 +398,15 @@ export function generate(program: Program): string {
     if (usesStdbool) {
         lines.push('#include <stdbool.h>');
     }
-    if (usesDynamicInt32) {
+    if (usesAnyDynamicArray) {
         lines.push('#include <stdlib.h>');
     }
     lines.push('');
 
-    if (usesDynamicInt32) {
-        lines.push('typedef struct {');
-        lines.push('    int32_t* data;');
-        lines.push('    int32_t length;');
-        lines.push('    int32_t capacity;');
-        lines.push('} yap_array_int32;');
-        lines.push('');
-        lines.push('static yap_array_int32 yap_array_int32_with_capacity(int32_t capacity) {');
-        lines.push('    yap_array_int32 arr;');
-        lines.push('    arr.length = 0;');
-        lines.push('    arr.capacity = capacity > 0 ? capacity : 1;');
-        lines.push('    arr.data = (int32_t*)malloc((size_t)arr.capacity * sizeof(int32_t));');
-        lines.push('    return arr;');
-        lines.push('}');
-        lines.push('');
-        lines.push('static yap_array_int32 yap_array_int32_from_values(const int32_t* values, int32_t length) {');
-        lines.push('    yap_array_int32 arr = yap_array_int32_with_capacity(length > 0 ? length : 1);');
-        lines.push('    for (int32_t i = 0; i < length; i++) {');
-        lines.push('        arr.data[i] = values[i];');
-        lines.push('    }');
-        lines.push('    arr.length = length;');
-        lines.push('    return arr;');
-        lines.push('}');
-        lines.push('');
-        lines.push('static void yap_array_int32_reserve(yap_array_int32* arr, int32_t needed) {');
-        lines.push('    if (arr->capacity >= needed) return;');
-        lines.push('    int32_t next = arr->capacity;');
-        lines.push('    while (next < needed) next *= 2;');
-        lines.push('    arr->data = (int32_t*)realloc(arr->data, (size_t)next * sizeof(int32_t));');
-        lines.push('    arr->capacity = next;');
-        lines.push('}');
-        lines.push('');
-        lines.push('static int32_t yap_array_int32_push(yap_array_int32* arr, int32_t value) {');
-        lines.push('    yap_array_int32_reserve(arr, arr->length + 1);');
-        lines.push('    arr->data[arr->length++] = value;');
-        lines.push('    return arr->length;');
-        lines.push('}');
-        lines.push('');
-        lines.push('static int32_t yap_array_int32_pop(yap_array_int32* arr) {');
-        lines.push('    if (arr->length <= 0) return 0;');
-        lines.push('    arr->length -= 1;');
-        lines.push('    return arr->data[arr->length];');
-        lines.push('}');
-        lines.push('');
-        lines.push('static void yap_array_int32_free(yap_array_int32* arr) {');
-        lines.push('    free(arr->data);');
-        lines.push('    arr->data = NULL;');
-        lines.push('    arr->length = 0;');
-        lines.push('    arr->capacity = 0;');
-        lines.push('}');
-        lines.push('');
+    for (const baseType of usedDynamicBaseTypes) {
+        for (const line of emitDynamicArrayHelpers(baseType)) {
+            lines.push(line);
+        }
     }
 
     // Forward-declare all functions except main
@@ -415,15 +474,15 @@ function genFn(fn: FnDecl, fnReturnTypes: Map<string, string>): string {
                   bufferName: returnBufferName,
               }
             : null,
-        ownedDynamicArrays: new Set<string>(),
+        ownedDynamicArrays: new Map<string, string>(),
     };
 
     const prologue = fixedReturnArray
         ? indent(`static ${mapTypeToC(fixedReturnArray.baseType)} ${returnBufferName}[${fixedReturnArray.size}] = {0};`) + '\n'
         : '';
     const body = fn.body.map((s) => indent(genStmt(s, varTypes, fnReturnTypes, ctx))).join('\n');
-    const cleanup = Array.from(ctx.ownedDynamicArrays)
-        .map((name) => `yap_array_int32_free(&${name});`)
+    const cleanup = Array.from(ctx.ownedDynamicArrays.entries())
+        .map(([name, baseType]) => `yap_array_${baseType}_free(&${name});`)
         .join('\n');
     const renderedCleanup = cleanup ? `\n${indent(cleanup)}` : '';
     const footer = isMain ? '\n    return 0;' : '';
@@ -453,19 +512,17 @@ function genStmt(stmt: Stmt, varTypes: Map<string, string>, fnReturnTypes: Map<s
             if (stmt.dynamicArray || stmt.arraySizeName !== undefined) {
                 const declaredType = stmt.arraySizeName !== undefined ? `${stmt.varType}[${stmt.arraySizeName}]` : `${stmt.varType}[]`;
                 varTypes.set(stmt.name, declaredType);
-                ctx.ownedDynamicArrays.add(stmt.name);
+                ctx.ownedDynamicArrays.set(stmt.name, stmt.varType);
 
-                if (stmt.varType !== 'int32') {
-                    throw new Error(`Dynamic arrays are currently only supported for int32, got ${stmt.varType}`);
-                }
-
+                const structName = `yap_array_${stmt.varType}`;
                 if (stmt.init.kind === 'ArrayLiteral') {
                     const values = stmt.init.elements.map((element) => genExpr(element, varTypes, fnReturnTypes)).join(', ');
                     const count = stmt.init.elements.length;
-                    return `yap_array_int32 ${stmt.name} = yap_array_int32_from_values((int32_t[]){${values}}, ${count});`;
+                    const compoundType = getDynamicArrayCompoundLiteralType(stmt.varType);
+                    return `${structName} ${stmt.name} = ${structName}_from_values((${compoundType}){${values}}, ${count});`;
                 }
 
-                return `yap_array_int32 ${stmt.name} = ${genExpr(stmt.init, varTypes, fnReturnTypes)};`;
+                return `${structName} ${stmt.name} = ${genExpr(stmt.init, varTypes, fnReturnTypes)};`;
             }
 
             if (stmt.arraySize !== undefined) {
@@ -520,9 +577,9 @@ function genStmt(stmt: Stmt, varTypes: Map<string, string>, fnReturnTypes: Map<s
             }
             if (ctx.ownedDynamicArrays.size > 0) {
                 const returnedLocal = stmt.value.kind === 'Ident' ? stmt.value.name : null;
-                const cleanup = Array.from(ctx.ownedDynamicArrays)
-                    .filter((name) => name !== returnedLocal)
-                    .map((name) => `yap_array_int32_free(&${name});`);
+                const cleanup = Array.from(ctx.ownedDynamicArrays.entries())
+                    .filter(([name]) => name !== returnedLocal)
+                    .map(([name, baseType]) => `yap_array_${baseType}_free(&${name});`);
                 if (cleanup.length > 0) {
                     return `${cleanup.join('\n')}\nreturn ${genExpr(stmt.value, varTypes, fnReturnTypes)};`;
                 }
@@ -622,7 +679,9 @@ function genExpr(expr: Expr, varTypes: Map<string, string> = new Map(), fnReturn
             if (!arrayType || !isDynamicLikeArrayType(arrayType)) {
                 throw new Error('push requires a dynamic array variable');
             }
-            return `yap_array_int32_push(&${expr.array.name}, ${genExpr(expr.value, varTypes, fnReturnTypes)})`;
+            const dynPush = parseDynamicArrayType(arrayType) ?? parseSymbolicArrayType(arrayType);
+            const pushBaseType = dynPush!.baseType;
+            return `yap_array_${pushBaseType}_push(&${expr.array.name}, ${genExpr(expr.value, varTypes, fnReturnTypes)})`;
         }
 
         case 'ArrayPop': {
@@ -633,7 +692,9 @@ function genExpr(expr: Expr, varTypes: Map<string, string> = new Map(), fnReturn
             if (!arrayType || !isDynamicLikeArrayType(arrayType)) {
                 throw new Error('pop requires a dynamic array variable');
             }
-            return `yap_array_int32_pop(&${expr.array.name})`;
+            const dynPop = parseDynamicArrayType(arrayType) ?? parseSymbolicArrayType(arrayType);
+            const popBaseType = dynPop!.baseType;
+            return `yap_array_${popBaseType}_pop(&${expr.array.name})`;
         }
 
         case 'Boolean': {
