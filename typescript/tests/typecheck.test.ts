@@ -230,6 +230,18 @@ describe('typecheckProgram', () => {
             ).not.toThrow();
         });
 
+        it('given read and write builtin calls with valid string arguments, expects no error', () => {
+            expect(() =>
+                check(`
+                    fn main() {
+                        let content string = read("input.txt")
+                        let status int32 = write("output.txt", content)
+                        print(status)
+                    }
+                `),
+            ).not.toThrow();
+        });
+
         it('given symbolic array declaration with numeric size variable, expects no error', () => {
             expect(() =>
                 check(`
@@ -508,6 +520,26 @@ describe('typecheckProgram', () => {
                     }
                 `),
             ).toThrow("Unknown function 'mystery'");
+        });
+
+        it('given read with wrong argument type, expects throw', () => {
+            expect(() =>
+                check(`
+                    fn main() {
+                        let content string = read(123)
+                    }
+                `),
+            ).toThrow("Argument 1 of 'read' expects 'string', got 'int32'");
+        });
+
+        it('given write with wrong argument count, expects throw', () => {
+            expect(() =>
+                check(`
+                    fn main() {
+                        let status int32 = write("only-path")
+                    }
+                `),
+            ).toThrow("Function 'write' expects 2 argument(s), got 1");
         });
     });
 

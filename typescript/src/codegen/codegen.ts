@@ -99,6 +99,97 @@ function stmtHasPrint(stmt: Stmt): boolean {
     }
 }
 
+function exprHasCall(expr: Expr, callee: string): boolean {
+    switch (expr.kind) {
+        case 'Call':
+            return expr.callee === callee || expr.args.some((arg) => exprHasCall(arg, callee));
+        case 'Binary':
+            return exprHasCall(expr.left, callee) || exprHasCall(expr.right, callee);
+        case 'ArrayLiteral':
+            return expr.elements.some((element) => exprHasCall(element, callee));
+        case 'IndexAccess':
+            return exprHasCall(expr.array, callee) || exprHasCall(expr.index, callee);
+        case 'ArrayLength':
+            return exprHasCall(expr.array, callee);
+        case 'ArrayPush':
+            return exprHasCall(expr.array, callee) || exprHasCall(expr.value, callee);
+        case 'ArrayPop':
+            return exprHasCall(expr.array, callee);
+        default:
+            return false;
+    }
+}
+
+function stmtHasCall(stmt: Stmt, callee: string): boolean {
+    switch (stmt.kind) {
+        case 'VarDecl':
+            return exprHasCall(stmt.init, callee);
+        case 'Assign':
+            return exprHasCall(stmt.value, callee);
+        case 'IndexAssign':
+            return (
+                exprHasCall(stmt.array, callee) ||
+                exprHasCall(stmt.index, callee) ||
+                exprHasCall(stmt.value, callee)
+            );
+        case 'Return':
+            return exprHasCall(stmt.value, callee);
+        case 'Print':
+            return exprHasCall(stmt.arg, callee);
+        case 'If':
+            return (
+                exprHasCall(stmt.cond, callee) ||
+                stmt.then.some((nested) => stmtHasCall(nested, callee)) ||
+                stmt.else_.some((nested) => stmtHasCall(nested, callee))
+            );
+        case 'While':
+            return exprHasCall(stmt.cond, callee) || stmt.body.some((nested) => stmtHasCall(nested, callee));
+        case 'ExprStmt':
+            return exprHasCall(stmt.expr, callee);
+    }
+}
+
+function emitFileIoHelpers(): string[] {
+    const lines: string[] = [];
+    lines.push('static char* yap_read(const char* path) {');
+    lines.push('    FILE* f = fopen(path, "rb");');
+    lines.push('    if (!f) return "";');
+    lines.push('    if (fseek(f, 0, SEEK_END) != 0) {');
+    lines.push('        fclose(f);');
+    lines.push('        return "";');
+    lines.push('    }');
+    lines.push('    long size = ftell(f);');
+    lines.push('    if (size < 0) {');
+    lines.push('        fclose(f);');
+    lines.push('        return "";');
+    lines.push('    }');
+    lines.push('    if (fseek(f, 0, SEEK_SET) != 0) {');
+    lines.push('        fclose(f);');
+    lines.push('        return "";');
+    lines.push('    }');
+    lines.push('    char* buffer = (char*)malloc((size_t)size + 1);');
+    lines.push('    if (!buffer) {');
+    lines.push('        fclose(f);');
+    lines.push('        return "";');
+    lines.push('    }');
+    lines.push('    size_t bytesRead = fread(buffer, 1, (size_t)size, f);');
+    lines.push("    buffer[bytesRead] = '\\0';");
+    lines.push('    fclose(f);');
+    lines.push('    return buffer;');
+    lines.push('}');
+    lines.push('');
+    lines.push('static int32_t yap_write(const char* path, const char* content) {');
+    lines.push('    FILE* f = fopen(path, "wb");');
+    lines.push('    if (!f) return 1;');
+    lines.push('    size_t length = strlen(content);');
+    lines.push('    size_t bytesWritten = fwrite(content, 1, length, f);');
+    lines.push('    fclose(f);');
+    lines.push('    return bytesWritten == length ? 0 : 2;');
+    lines.push('}');
+    lines.push('');
+    return lines;
+}
+
 function stmtHasBooleanUsage(stmt: Stmt): boolean {
     switch (stmt.kind) {
         case 'VarDecl':
@@ -369,7 +460,11 @@ export function generate(program: Program): string {
     }
     const usesAnyDynamicArray = usedDynamicBaseTypes.size > 0;
     const usesPrint = program.fns.some((fn) => fn.body.some(stmtHasPrint));
+    const usesRead = program.fns.some((fn) => fn.body.some((stmt) => stmtHasCall(stmt, 'read')));
+    const usesWrite = program.fns.some((fn) => fn.body.some((stmt) => stmtHasCall(stmt, 'write')));
+    const usesFileIo = usesRead || usesWrite;
     const usesStdint =
+        usesFileIo ||
         usesAnyDynamicArray ||
         program.fns.some((fn) => {
             if (typeUsesBase(fn.returnType, 'int32') || typeUsesBase(fn.returnType, 'int64')) {
@@ -389,7 +484,7 @@ export function generate(program: Program): string {
         program.fns.some((fn) => typeUsesBase(fn.returnType, 'boolean') || fn.params.some((p) => typeUsesBase(p.paramType, 'boolean'))) ||
         program.fns.some((fn) => fn.body.some(stmtHasBooleanUsage));
 
-    if (usesPrint) {
+    if (usesPrint || usesFileIo) {
         lines.push('#include <stdio.h>');
     }
     if (usesStdint) {
@@ -398,13 +493,22 @@ export function generate(program: Program): string {
     if (usesStdbool) {
         lines.push('#include <stdbool.h>');
     }
-    if (usesAnyDynamicArray) {
+    if (usesAnyDynamicArray || usesFileIo) {
         lines.push('#include <stdlib.h>');
+    }
+    if (usesFileIo) {
+        lines.push('#include <string.h>');
     }
     lines.push('');
 
     for (const baseType of usedDynamicBaseTypes) {
         for (const line of emitDynamicArrayHelpers(baseType)) {
+            lines.push(line);
+        }
+    }
+
+    if (usesFileIo) {
+        for (const line of emitFileIoHelpers()) {
             lines.push(line);
         }
     }
@@ -655,6 +759,9 @@ function genExpr(expr: Expr, varTypes: Map<string, string> = new Map(), fnReturn
         case 'Binary':
             return `(${genExpr(expr.left, varTypes, fnReturnTypes)} ${expr.op} ${genExpr(expr.right, varTypes, fnReturnTypes)})`;
         case 'Call':
+            if (expr.callee === 'read' || expr.callee === 'write') {
+                return `yap_${expr.callee}(${expr.args.map((arg) => genExpr(arg, varTypes, fnReturnTypes)).join(', ')})`;
+            }
             return `${expr.callee}(${expr.args.map((arg) => genExpr(arg, varTypes, fnReturnTypes)).join(', ')})`;
         case 'ArrayLiteral':
             return `{${expr.elements.map((element) => genExpr(element, varTypes, fnReturnTypes)).join(', ')}}`;

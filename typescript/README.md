@@ -127,6 +127,25 @@ fn add(a int32, b int32) int32 {
 - Function calls with zero or more arguments.
 - Recursion.
 
+### Built-in File I/O Functions
+
+YAP provides two built-in file functions:
+
+```yap
+let content string = read("input.txt")
+let status int32 = write("output.txt", content)
+```
+
+- `read(path string) -> string`
+- `write(path string, content string) -> int32`
+
+Behavior:
+
+- `read` returns the file contents as a string.
+- `read` returns an empty string if the file cannot be read.
+- `write` returns `0` on success.
+- `write` returns non-zero on failure.
+
 Examples:
 
 ```yap

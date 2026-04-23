@@ -618,4 +618,66 @@ describe('codegen.generate', () => {
         expect(output).toContain('return arr;');
         expect(output).toContain('yap_array_int32 vals = nums();');
     });
+
+    it('given read call, expects file-io helpers and mapped yap_read call in C output', () => {
+        const program: Program = {
+            fns: [
+                {
+                    name: 'main',
+                    params: [],
+                    returnType: 'int32',
+                    body: [
+                        {
+                            kind: 'VarDecl',
+                            name: 'content',
+                            varType: 'string',
+                            init: { kind: 'Call', callee: 'read', args: [{ kind: 'String', value: 'input.txt' }] },
+                        },
+                        { kind: 'Print', arg: { kind: 'Ident', name: 'content' } },
+                    ],
+                },
+            ],
+        };
+
+        const output = normalizeEol(generate(program));
+        expect(output).toContain('#include <stdio.h>');
+        expect(output).toContain('#include <stdint.h>');
+        expect(output).toContain('#include <stdlib.h>');
+        expect(output).toContain('#include <string.h>');
+        expect(output).toContain('static char* yap_read(const char* path) {');
+        expect(output).toContain('char* content = yap_read("input.txt");');
+    });
+
+    it('given write call, expects mapped yap_write call and int32 return status', () => {
+        const program: Program = {
+            fns: [
+                {
+                    name: 'main',
+                    params: [],
+                    returnType: 'int32',
+                    body: [
+                        {
+                            kind: 'VarDecl',
+                            name: 'status',
+                            varType: 'int32',
+                            init: {
+                                kind: 'Call',
+                                callee: 'write',
+                                args: [
+                                    { kind: 'String', value: 'output.txt' },
+                                    { kind: 'String', value: 'hello' },
+                                ],
+                            },
+                        },
+                        { kind: 'Print', arg: { kind: 'Ident', name: 'status' } },
+                    ],
+                },
+            ],
+        };
+
+        const output = normalizeEol(generate(program));
+        expect(output).toContain('static int32_t yap_write(const char* path, const char* content) {');
+        expect(output).toContain('int32_t status = yap_write("output.txt", "hello");');
+        expect(output).toContain('return bytesWritten == length ? 0 : 2;');
+    });
 });

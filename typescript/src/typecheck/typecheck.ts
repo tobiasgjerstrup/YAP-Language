@@ -112,6 +112,26 @@ interface FnSig {
     returnType: string;
 }
 
+const BUILTIN_FN_SIGS = new Map<string, FnSig>([
+    [
+        'read',
+        {
+            params: [{ name: 'path', paramType: 'string' }],
+            returnType: 'string',
+        },
+    ],
+    [
+        'write',
+        {
+            params: [
+                { name: 'path', paramType: 'string' },
+                { name: 'content', paramType: 'string' },
+            ],
+            returnType: 'int32',
+        },
+    ],
+]);
+
 // ─── Expression type inference ────────────────────────────────────────────────
 
 function inferExprType(
@@ -435,9 +455,10 @@ function checkFn(fn: FnDecl, fnSigs: Map<string, FnSig>): void {
 // ─── Public entry point ───────────────────────────────────────────────────────
 
 export function typecheckProgram(program: Program): void {
-    const fnSigs = new Map<string, FnSig>(
-        program.fns.map((fn) => [fn.name, { params: fn.params, returnType: fn.returnType }]),
-    );
+    const fnSigs = new Map<string, FnSig>(BUILTIN_FN_SIGS);
+    for (const fn of program.fns) {
+        fnSigs.set(fn.name, { params: fn.params, returnType: fn.returnType });
+    }
 
     for (const fn of program.fns) {
         checkFn(fn, fnSigs);
