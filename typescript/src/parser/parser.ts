@@ -36,14 +36,6 @@ export interface ParamDecl {
     paramType: string;
 }
 
-interface ParsedTypeAnnotation {
-    baseType: string;
-    fullType: string;
-    arraySize?: number;
-    arraySizeName?: string;
-    dynamicArray?: boolean;
-}
-
 export interface FnDecl {
     name: string;
     params: ParamDecl[];
@@ -59,6 +51,7 @@ export interface Program {
 // ─── Parser ───────────────────────────────────────────────────────────────────
 
 import { Token, TokenType, lex } from '../lexer/lexer.js';
+import { TypeAnnotationParser, ParsedTypeAnnotation } from './type-parser.js';
 
 /**
  * Parses YAP source code into a `Program` AST.
@@ -82,6 +75,7 @@ export class Parser {
     private peek(): Token {
         return this.tokens[this.pos];
     }
+
     private advance(): Token {
         return this.tokens[this.pos++];
     }
@@ -107,43 +101,10 @@ export class Parser {
     }
 
     private parseTypeAnnotation(): ParsedTypeAnnotation {
-        const baseType = this.eat('IDENT').value;
-
-        if (!this.match('LBRACKET')) {
-            return { baseType, fullType: baseType };
-        }
-
-        if (this.match('RBRACKET')) {
-            return {
-                baseType,
-                fullType: `${baseType}[]`,
-                dynamicArray: true,
-            };
-        }
-
-        if (this.check('NUMBER')) {
-            const sizeToken = this.advance();
-            this.eat('RBRACKET');
-            return {
-                baseType,
-                fullType: `${baseType}[${sizeToken.value}]`,
-                arraySize: Number(sizeToken.value),
-            };
-        }
-
-        if (this.check('IDENT')) {
-            const sizeName = this.advance().value;
-            this.eat('RBRACKET');
-            return {
-                baseType,
-                fullType: `${baseType}[${sizeName}]`,
-                arraySizeName: sizeName,
-                dynamicArray: true,
-            };
-        }
-
-        const t = this.peek();
-        throw new Error(`Expected array size identifier, number, or ']' but got ${t.type} ('${t.value}') at line ${t.line}`);
+        const parser = new TypeAnnotationParser(this.tokens, this.pos);
+        const { annotation, newPos } = parser.parse();
+        this.pos = newPos;
+        return annotation;
     }
 
     // ── Grammar ─────────────────────────────────────────────────────────────────
