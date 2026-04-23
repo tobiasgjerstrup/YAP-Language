@@ -7,11 +7,18 @@ export type Expr =
     | { kind: 'Binary'; op: string; left: Expr; right: Expr }
     | { kind: 'Call'; callee: string; args: Expr[] }
     | { kind: 'ArrayLiteral'; elements: Expr[] }
+    | { kind: 'ObjectLiteral'; fields: ObjectFieldValue[] }
     | { kind: 'ArrayLength'; array: Expr }
     | { kind: 'ArrayPush'; array: Expr; value: Expr }
     | { kind: 'ArrayPop'; array: Expr }
     | { kind: 'IndexAccess'; array: Expr; index: Expr }
+    | { kind: 'PropertyAccess'; object: Expr; property: string }
     | { kind: 'Boolean'; value: boolean };
+
+export interface ObjectFieldValue {
+    name: string;
+    value: Expr;
+}
 
 export type Stmt =
     | {
@@ -25,6 +32,7 @@ export type Stmt =
       }
     | { kind: 'Assign'; name: string; value: Expr }
     | { kind: 'IndexAssign'; array: Expr; index: Expr; value: Expr }
+    | { kind: 'PropertyAssign'; object: Expr; property: string; value: Expr }
     | { kind: 'Print'; arg: Expr }
     | { kind: 'Return'; value: Expr }
     | { kind: 'If'; cond: Expr; then: Stmt[]; else_: Stmt[] }
@@ -43,9 +51,20 @@ export interface FnDecl {
     body: Stmt[];
 }
 
+export interface ObjectTypeField {
+    name: string;
+    fieldType: string;
+}
+
+export interface ObjectTypeDecl {
+    name: string;
+    fields: ObjectTypeField[];
+}
+
 export interface Program {
     fns: FnDecl[];
     imports?: string[];
+    objectTypes?: ObjectTypeDecl[];
 }
 
 // ─── Parser ───────────────────────────────────────────────────────────────────
@@ -117,17 +136,27 @@ export class Parser {
     parseProgram(): Program {
         const fns: FnDecl[] = [];
         const imports: string[] = [];
+        const objectTypes: ObjectTypeDecl[] = [];
         while (!this.check('EOF')) {
             if (this.check('IMPORT')) {
                 imports.push(this.parseImport());
                 continue;
             }
+            if (this.check('TYPE')) {
+                objectTypes.push(this.parseObjectTypeDecl());
+                this.match('SEMI');
+                continue;
+            }
             fns.push(this.parseFn());
         }
+        const program: Program = { fns };
         if (imports.length > 0) {
-            return { fns, imports };
+            program.imports = imports;
         }
-        return { fns };
+        if (objectTypes.length > 0) {
+            program.objectTypes = objectTypes;
+        }
+        return program;
     }
 
     /**
@@ -140,6 +169,32 @@ export class Parser {
         const pathToken = this.eat('STRING');
         this.match('SEMI');
         return pathToken.value;
+    }
+
+    private parseObjectTypeDecl(): ObjectTypeDecl {
+        this.eat('TYPE');
+        const name = this.eat('IDENT').value;
+        this.eat('EQ');
+        this.eat('LBRACE');
+        const fields: ObjectTypeField[] = [];
+        if (!this.check('RBRACE')) {
+            fields.push(this.parseObjectTypeField());
+            while (this.match('COMMA')) {
+                if (this.check('RBRACE')) {
+                    break;
+                }
+                fields.push(this.parseObjectTypeField());
+            }
+        }
+        this.eat('RBRACE');
+        return { name, fields };
+    }
+
+    private parseObjectTypeField(): ObjectTypeField {
+        const name = this.eat('IDENT').value;
+        this.eat('COLON');
+        const fieldType = this.parseTypeAnnotation().fullType;
+        return { name, fieldType };
     }
 
     /**
@@ -284,11 +339,14 @@ export class Parser {
         if (t.type === 'IDENT') {
             const saved = this.pos;
             const lhs = this.parsePrimary();
-            if ((lhs.kind === 'Ident' || lhs.kind === 'IndexAccess') && this.check('EQ')) {
+            if ((lhs.kind === 'Ident' || lhs.kind === 'IndexAccess' || lhs.kind === 'PropertyAccess') && this.check('EQ')) {
                 this.advance(); // eat '='
                 const value = this.parseExpr();
                 if (lhs.kind === 'Ident') {
                     return { kind: 'Assign', name: lhs.name, value };
+                }
+                if (lhs.kind === 'PropertyAccess') {
+                    return { kind: 'PropertyAssign', object: lhs.object, property: lhs.property, value };
                 }
                 return { kind: 'IndexAssign', array: lhs.array, index: lhs.index, value };
             }
@@ -392,6 +450,22 @@ export class Parser {
             return this.parsePostfix({ kind: 'ArrayLiteral', elements }, t.line);
         }
 
+        if (t.type === 'LBRACE') {
+            this.advance();
+            const fields: ObjectFieldValue[] = [];
+            if (!this.check('RBRACE')) {
+                fields.push(this.parseObjectLiteralField());
+                while (this.match('COMMA')) {
+                    if (this.check('RBRACE')) {
+                        break;
+                    }
+                    fields.push(this.parseObjectLiteralField());
+                }
+            }
+            this.eat('RBRACE');
+            return this.parsePostfix({ kind: 'ObjectLiteral', fields }, t.line);
+        }
+
         if (t.type === 'LPAREN') {
             this.advance();
             const expr = this.parseExpr();
@@ -405,6 +479,13 @@ export class Parser {
         }
 
         throw new Error(`Unexpected token ${t.type} ('${t.value}') at line ${t.line}`);
+    }
+
+    private parseObjectLiteralField(): ObjectFieldValue {
+        const name = this.eat('IDENT').value;
+        this.eat('COLON');
+        const value = this.parseExpr();
+        return { name, value };
     }
 
     private parsePostfix(base: Expr, line: number): Expr {
@@ -462,9 +543,8 @@ export class Parser {
                     expr = { kind: 'ArrayPop', array: expr };
                     continue;
                 }
-                if (property.value !== 'length') {
-                    throw new Error(`Unsupported property '${property.value}' at line ${property.line}`);
-                }
+                expr = { kind: 'PropertyAccess', object: expr, property: property.value };
+                continue;
             }
 
             break;

@@ -104,6 +104,39 @@ describe('Parser', () => {
         });
     });
 
+    describe('object types', () => {
+        it('given named object type declaration, records fields and types', () => {
+            const prog = parse('type User = { name: string, age: int32 } fn main() int32 {}');
+            expect(prog.objectTypes).toEqual([
+                {
+                    name: 'User',
+                    fields: [
+                        { name: 'name', fieldType: 'string' },
+                        { name: 'age', fieldType: 'int32' },
+                    ],
+                },
+            ]);
+            expect(prog.fns).toHaveLength(1);
+        });
+
+        it('given nested object and array field types, records full field types', () => {
+            const prog = parse('type User = { name: string } type Team = { lead: User, tags: string[] } fn main() int32 {}');
+            expect(prog.objectTypes).toEqual([
+                {
+                    name: 'User',
+                    fields: [{ name: 'name', fieldType: 'string' }],
+                },
+                {
+                    name: 'Team',
+                    fields: [
+                        { name: 'lead', fieldType: 'User' },
+                        { name: 'tags', fieldType: 'string[]' },
+                    ],
+                },
+            ]);
+        });
+    });
+
     describe('statements', () => {
         describe('VarDecl', () => {
             it('given let without explicit type and number initializer, expects VarDecl with undefined varType', () => {
@@ -226,6 +259,20 @@ describe('Parser', () => {
                     value: { kind: 'Number', value: 10 },
                 });
             });
+
+            it('given property assignment, expects PropertyAssign node', () => {
+                const prog = parse('fn main() int32 { user.profile.name = "Ada" }');
+                expect(prog.fns[0].body[0]).toEqual({
+                    kind: 'PropertyAssign',
+                    object: {
+                        kind: 'PropertyAccess',
+                        object: { kind: 'Ident', name: 'user' },
+                        property: 'profile',
+                    },
+                    property: 'name',
+                    value: { kind: 'String', value: 'Ada' },
+                });
+            });
         });
 
         describe('Return', () => {
@@ -252,6 +299,53 @@ describe('Parser', () => {
                 expect(prog.fns[0].body[0]).toEqual({
                     kind: 'Print',
                     arg: { kind: 'String', value: 'hello' },
+                });
+            });
+
+            it('given print with property access, expects nested PropertyAccess expr', () => {
+                const prog = parse('fn main() int32 { print(user.profile.name) }');
+                expect(prog.fns[0].body[0]).toEqual({
+                    kind: 'Print',
+                    arg: {
+                        kind: 'PropertyAccess',
+                        object: {
+                            kind: 'PropertyAccess',
+                            object: { kind: 'Ident', name: 'user' },
+                            property: 'profile',
+                        },
+                        property: 'name',
+                    },
+                });
+            });
+
+            it('given object literal, expects ObjectLiteral expr with nested values', () => {
+                const prog = parse('fn main() int32 { print({ name: "Ada", scores: [1, 2, 3], meta: { active: true } }) }');
+                expect(prog.fns[0].body[0]).toEqual({
+                    kind: 'Print',
+                    arg: {
+                        kind: 'ObjectLiteral',
+                        fields: [
+                            { name: 'name', value: { kind: 'String', value: 'Ada' } },
+                            {
+                                name: 'scores',
+                                value: {
+                                    kind: 'ArrayLiteral',
+                                    elements: [
+                                        { kind: 'Number', value: 1 },
+                                        { kind: 'Number', value: 2 },
+                                        { kind: 'Number', value: 3 },
+                                    ],
+                                },
+                            },
+                            {
+                                name: 'meta',
+                                value: {
+                                    kind: 'ObjectLiteral',
+                                    fields: [{ name: 'active', value: { kind: 'Boolean', value: true } }],
+                                },
+                            },
+                        ],
+                    },
                 });
             });
         });
@@ -506,8 +600,10 @@ describe('Parser', () => {
             expect(() => parse('fn main() int32 { arr.pop(1) }')).toThrow("'pop' does not take arguments");
         });
 
-        it('given unsupported property access, expects throw', () => {
-            expect(() => parse('fn main() int32 { print(arr.size) }')).toThrow("Unsupported property 'size'");
+        it('given object literal field without colon, expects throw', () => {
+            expect(() => parse('fn main() int32 { print({ name "Ada" }) }')).toThrow(
+                "Expected COLON but got STRING ('Ada')",
+            );
         });
     });
 });

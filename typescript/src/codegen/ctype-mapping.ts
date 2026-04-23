@@ -2,9 +2,11 @@
  * Maps YAP types to C types and handles type-to-C conversions.
  */
 
-import { parseFixedArrayType, parseDynamicArrayType, parseSymbolicArrayType } from '../types.js';
+import { isObjectType, ObjectTypeMap, parseFixedArrayType, parseDynamicArrayType, parseSymbolicArrayType } from '../types.js';
 
-export function mapTypeToC(varType: string): string {
+const EMPTY_OBJECT_TYPES: ObjectTypeMap = new Map();
+
+export function mapTypeToC(varType: string, objectTypes: ObjectTypeMap = EMPTY_OBJECT_TYPES): string {
     const normalized = varType.endsWith('[]') ? varType.slice(0, -2) : varType;
     switch (normalized) {
         case 'int32':
@@ -16,27 +18,30 @@ export function mapTypeToC(varType: string): string {
         case 'boolean':
             return 'bool';
         default:
+            if (isObjectType(normalized, objectTypes)) {
+                return `yap_object_${normalized}`;
+            }
             throw new Error(`Unsupported variable type: ${varType}`);
     }
 }
 
-export function mapReturnTypeToC(returnType: string): string {
+export function mapReturnTypeToC(returnType: string, objectTypes: ObjectTypeMap = EMPTY_OBJECT_TYPES): string {
     const fixedArray = parseFixedArrayType(returnType);
     if (fixedArray) {
-        return `${mapTypeToC(fixedArray.baseType)}*`;
+        return `${mapTypeToC(fixedArray.baseType, objectTypes)}*`;
     }
     const dynamicArray = parseDynamicArrayType(returnType);
     if (dynamicArray) {
-        return mapArrayTypeToC(dynamicArray);
+        return mapArrayTypeToC(dynamicArray, objectTypes);
     }
     const symbolicArray = parseSymbolicArrayType(returnType);
     if (symbolicArray) {
-        return mapArrayTypeToC(symbolicArray);
+        return mapArrayTypeToC(symbolicArray, objectTypes);
     }
-    return mapTypeToC(returnType);
+    return mapTypeToC(returnType, objectTypes);
 }
 
-export function mapArrayTypeToC(arrayType: { baseType: string }): string {
+export function mapArrayTypeToC(arrayType: { baseType: string }, objectTypes: ObjectTypeMap = EMPTY_OBJECT_TYPES): string {
     // Validate that baseType is supported for dynamic arrays
     mapDynamicArrayCElemType(arrayType.baseType);
     return `yap_array_${arrayType.baseType}`;

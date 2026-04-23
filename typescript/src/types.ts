@@ -2,6 +2,8 @@
  * Type parsing and utilities shared across codegen and typecheck modules.
  */
 
+import type { ObjectTypeDecl } from './parser/parser.js';
+
 export interface FixedArrayType {
     baseType: string;
     size: number;
@@ -17,10 +19,24 @@ export interface SymbolicArrayType {
 }
 
 export type AnyArrayType = FixedArrayType | DynamicArrayType | SymbolicArrayType;
+export type ObjectTypeMap = Map<string, ObjectTypeDecl>;
 
 export const BASE_TYPES = new Set(['int32', 'int64', 'string', 'boolean']);
 export const NUMERIC_TYPES = new Set(['int32', 'int64']);
 export const BOOLEAN_TYPES = new Set(['boolean']);
+const EMPTY_OBJECT_TYPES: ObjectTypeMap = new Map();
+
+export function buildObjectTypeMap(objectTypes: ObjectTypeDecl[] = []): ObjectTypeMap {
+    return new Map(objectTypes.map((objectType) => [objectType.name, objectType]));
+}
+
+export function getObjectType(typeName: string, objectTypes: ObjectTypeMap = EMPTY_OBJECT_TYPES): ObjectTypeDecl | undefined {
+    return objectTypes.get(typeName);
+}
+
+export function isObjectType(typeName: string, objectTypes: ObjectTypeMap = EMPTY_OBJECT_TYPES): boolean {
+    return objectTypes.has(typeName);
+}
 
 export function parseFixedArrayType(typeName: string): FixedArrayType | null {
     const match = typeName.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\[(\d+)\]$/);
@@ -67,12 +83,16 @@ export function isBoolean(t: string): boolean {
     return BOOLEAN_TYPES.has(t);
 }
 
-export function validateTypeName(t: string, context: string): void {
+function validateBaseOrObjectType(typeName: string, context: string, objectTypes: ObjectTypeMap): void {
+    if (!BASE_TYPES.has(typeName) && !objectTypes.has(typeName)) {
+        throw new Error(`Unknown type: ${typeName} (in ${context})`);
+    }
+}
+
+export function validateTypeName(t: string, context: string, objectTypes: ObjectTypeMap = EMPTY_OBJECT_TYPES): void {
     const arr = parseFixedArrayType(t);
     if (arr) {
-        if (!BASE_TYPES.has(arr.baseType)) {
-            throw new Error(`Unknown type: ${arr.baseType} (in ${context})`);
-        }
+        validateBaseOrObjectType(arr.baseType, context, objectTypes);
         if (arr.size <= 0) {
             throw new Error(`Array size must be positive, got ${arr.size} (in ${context})`);
         }
@@ -80,24 +100,22 @@ export function validateTypeName(t: string, context: string): void {
     }
     const dynamicArr = parseDynamicArrayType(t);
     if (dynamicArr) {
-        if (!BASE_TYPES.has(dynamicArr.baseType)) {
-            throw new Error(`Unknown type: ${dynamicArr.baseType} (in ${context})`);
-        }
+        validateBaseOrObjectType(dynamicArr.baseType, context, objectTypes);
         return;
     }
     const symbolicArr = parseSymbolicArrayType(t);
     if (symbolicArr) {
-        if (!BASE_TYPES.has(symbolicArr.baseType)) {
-            throw new Error(`Unknown type: ${symbolicArr.baseType} (in ${context})`);
-        }
+        validateBaseOrObjectType(symbolicArr.baseType, context, objectTypes);
         return;
     }
-    if (!BASE_TYPES.has(t)) {
-        throw new Error(`Unknown type: ${t} (in ${context})`);
-    }
+    validateBaseOrObjectType(t, context, objectTypes);
 }
 
-export function isAssignableType(sourceType: string, targetType: string): boolean {
+export function isAssignableType(
+    sourceType: string,
+    targetType: string,
+    objectTypes: ObjectTypeMap = EMPTY_OBJECT_TYPES,
+): boolean {
     if (sourceType === targetType) {
         return true;
     }

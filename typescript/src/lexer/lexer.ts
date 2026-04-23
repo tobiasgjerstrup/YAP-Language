@@ -3,6 +3,7 @@ export type TokenType =
     | 'STRING' // e.g. "hello"
     | 'IDENT' // e.g. myVar
     | 'LET' // 'let' keyword
+    | 'TYPE' // 'type' keyword
     | 'FN' // 'fn' keyword
     | 'IF' // 'if' keyword
     | 'ELSE' // 'else' keyword
@@ -28,6 +29,7 @@ export type TokenType =
     | 'LBRACKET' // '['
     | 'RBRACKET' // ']'
     | 'DOT' // '.'
+    | 'COLON' // ':'
     | 'COMMA' // ','
     | 'SEMI' // ';'
     | 'BOOLEAN' // true/false literals
@@ -41,6 +43,7 @@ export interface Token {
 
 const KEYWORDS: Record<string, TokenType> = {
     let: 'LET',
+    type: 'TYPE',
     fn: 'FN',
     if: 'IF',
     else: 'ELSE',
@@ -158,6 +161,7 @@ export function lex(source: string): Token[] {
             '[': 'LBRACKET',
             ']': 'RBRACKET',
             '.': 'DOT',
+            ':': 'COLON',
             ',': 'COMMA',
             ';': 'SEMI',
         };

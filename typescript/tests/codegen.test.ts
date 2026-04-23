@@ -300,6 +300,92 @@ describe('codegen.generate', () => {
         expect(() => generate(program)).toThrow('Unsupported variable type: bool');
     });
 
+    it('given named object type with property access and assignment, emits C struct usage', () => {
+        const program: Program = {
+            objectTypes: [
+                {
+                    name: 'Profile',
+                    fields: [{ name: 'name', fieldType: 'string' }],
+                },
+                {
+                    name: 'User',
+                    fields: [
+                        { name: 'profile', fieldType: 'Profile' },
+                        { name: 'scores', fieldType: 'int32[]' },
+                    ],
+                },
+            ],
+            fns: [
+                {
+                    name: 'main',
+                    params: [],
+                    returnType: 'int32',
+                    body: [
+                        {
+                            kind: 'VarDecl',
+                            name: 'user',
+                            varType: 'User',
+                            init: {
+                                kind: 'ObjectLiteral',
+                                fields: [
+                                    {
+                                        name: 'profile',
+                                        value: {
+                                            kind: 'ObjectLiteral',
+                                            fields: [{ name: 'name', value: { kind: 'String', value: 'Ada' } }],
+                                        },
+                                    },
+                                    {
+                                        name: 'scores',
+                                        value: {
+                                            kind: 'ArrayLiteral',
+                                            elements: [
+                                                { kind: 'Number', value: 1 },
+                                                { kind: 'Number', value: 2 },
+                                                { kind: 'Number', value: 3 },
+                                            ],
+                                        },
+                                    },
+                                ],
+                            },
+                        },
+                        {
+                            kind: 'PropertyAssign',
+                            object: {
+                                kind: 'PropertyAccess',
+                                object: { kind: 'Ident', name: 'user' },
+                                property: 'profile',
+                            },
+                            property: 'name',
+                            value: { kind: 'String', value: 'Grace' },
+                        },
+                        { kind: 'Print', arg: { kind: 'PropertyAccess', object: { kind: 'Ident', name: 'user' }, property: 'profile' } as never },
+                        {
+                            kind: 'Print',
+                            arg: {
+                                kind: 'PropertyAccess',
+                                object: {
+                                    kind: 'PropertyAccess',
+                                    object: { kind: 'Ident', name: 'user' },
+                                    property: 'profile',
+                                },
+                                property: 'name',
+                            },
+                        },
+                    ],
+                },
+            ],
+        };
+
+        const output = normalizeEol(generate(program));
+
+        expect(output).toContain('typedef struct {\n    char* name;\n} yap_object_Profile;');
+        expect(output).toContain('typedef struct {\n    yap_object_Profile profile;\n    yap_array_int32 scores;\n} yap_object_User;');
+        expect(output).toContain('yap_object_User user = (yap_object_User){.profile = (yap_object_Profile){.name = "Ada"}, .scores = yap_array_int32_from_values((int32_t[]){1, 2, 3}, 3)};');
+        expect(output).toContain('user.profile.name = "Grace";');
+        expect(output).toContain('printf("%s\\n", user.profile.name);');
+    });
+
     it('given fixed-size array declaration and index access, expects C array syntax', () => {
         const program: Program = {
             fns: [

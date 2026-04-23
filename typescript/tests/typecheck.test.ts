@@ -268,6 +268,45 @@ describe('typecheckProgram', () => {
                 `),
             ).not.toThrow();
         });
+
+        it('given named objects with nested properties and array fields, expects no error', () => {
+            expect(() =>
+                check(`
+                    type Profile = { name: string }
+                    type User = { profile: Profile, scores: int32[] }
+
+                    fn main() {
+                        let user User = { profile: { name: "Ada" }, scores: [1, 2, 3] }
+                        user.profile.name = "Grace"
+                        let name string = user.profile.name
+                        let scoreCount int32 = user.scores.length
+                        print(name)
+                        print(scoreCount)
+                    }
+                `),
+            ).not.toThrow();
+        });
+
+        it('given function returning and consuming object values, expects no error', () => {
+            expect(() =>
+                check(`
+                    type User = { name: string, age: int32 }
+
+                    fn make_user() User {
+                        return { name: "Ada", age: 32 }
+                    }
+
+                    fn age_of(user User) int32 {
+                        return user.age
+                    }
+
+                    fn main() {
+                        let user User = make_user()
+                        print(age_of(user))
+                    }
+                `),
+            ).not.toThrow();
+        });
     });
 
     // ─── Type name validation ─────────────────────────────────────────────────
@@ -689,6 +728,59 @@ describe('typecheckProgram', () => {
                     }
                 `),
             ).toThrow("Cannot print array type 'int32[3]' directly");
+        });
+
+        it('given print of object directly, expects throw', () => {
+            expect(() =>
+                check(`
+                    type User = { name: string }
+
+                    fn main() {
+                        let user User = { name: "Ada" }
+                        print(user)
+                    }
+                `),
+            ).toThrow("Cannot print value of type 'User'");
+        });
+    });
+
+    describe('Object mismatches', () => {
+        it('given object literal missing a field, expects throw', () => {
+            expect(() =>
+                check(`
+                    type User = { name: string, age: int32 }
+
+                    fn main() {
+                        let user User = { name: "Ada" }
+                    }
+                `),
+            ).toThrow("missing field 'age'");
+        });
+
+        it('given unknown property access, expects throw', () => {
+            expect(() =>
+                check(`
+                    type User = { name: string }
+
+                    fn main() {
+                        let user User = { name: "Ada" }
+                        print(user.age)
+                    }
+                `),
+            ).toThrow("Type 'User' has no property 'age'");
+        });
+
+        it('given property assignment with wrong type, expects throw', () => {
+            expect(() =>
+                check(`
+                    type User = { age: int32 }
+
+                    fn main() {
+                        let user User = { age: 1 }
+                        user.age = "old"
+                    }
+                `),
+            ).toThrow("Type mismatch in property assignment to 'age': expected 'int32', got 'string'");
         });
     });
 

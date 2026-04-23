@@ -3,10 +3,53 @@
  */
 
 import { Expr } from '../parser/parser.js';
-import { parseAnyArrayType, parseFixedArrayType, parseDynamicArrayType, parseSymbolicArrayType, isDynamicLikeArrayType } from '../types.js';
-import { mapArrayTypeToC } from './ctype-mapping.js';
+import {
+    getObjectType,
+    ObjectTypeMap,
+    parseAnyArrayType,
+    parseFixedArrayType,
+    parseDynamicArrayType,
+    parseSymbolicArrayType,
+    isDynamicLikeArrayType,
+} from '../types.js';
+import { mapArrayTypeToC, mapDynamicArrayCompoundLiteralType, mapTypeToC } from './ctype-mapping.js';
 
-export function genExpr(expr: Expr, varTypes: Map<string, string> = new Map(), fnReturnTypes: Map<string, string> = new Map()): string {
+export interface CodegenFnSig {
+    params: string[];
+    returnType: string;
+}
+
+const EMPTY_OBJECT_TYPES: ObjectTypeMap = new Map();
+
+function getFnReturnType(fnSigs: Map<string, CodegenFnSig | string>, callee: string): string | undefined {
+    const sig = fnSigs.get(callee);
+    return typeof sig === 'string' ? sig : sig?.returnType;
+}
+
+function getFnParamTypes(fnSigs: Map<string, CodegenFnSig | string>, callee: string): string[] | undefined {
+    const sig = fnSigs.get(callee);
+    return typeof sig === 'string' ? undefined : sig?.params;
+}
+
+function genDynamicArrayLiteral(
+    baseType: string,
+    expr: Extract<Expr, { kind: 'ArrayLiteral' }>,
+    varTypes: Map<string, string>,
+    fnSigs: Map<string, CodegenFnSig | string>,
+    objectTypes: ObjectTypeMap,
+): string {
+    const compoundType = mapDynamicArrayCompoundLiteralType(baseType);
+    const values = expr.elements.map((element) => genExpr(element, varTypes, fnSigs, objectTypes, baseType)).join(', ');
+    return `yap_array_${baseType}_from_values((${compoundType}){${values}}, ${expr.elements.length})`;
+}
+
+export function genExpr(
+    expr: Expr,
+    varTypes: Map<string, string> = new Map(),
+    fnSigs: Map<string, CodegenFnSig | string> = new Map(),
+    objectTypes: ObjectTypeMap = EMPTY_OBJECT_TYPES,
+    expectedType?: string,
+): string {
     switch (expr.kind) {
         case 'Number':
             return String(expr.value);
@@ -18,55 +61,78 @@ export function genExpr(expr: Expr, varTypes: Map<string, string> = new Map(), f
             return expr.name;
 
         case 'Binary':
-            return `(${genExpr(expr.left, varTypes, fnReturnTypes)} ${expr.op} ${genExpr(expr.right, varTypes, fnReturnTypes)})`;
+            return `(${genExpr(expr.left, varTypes, fnSigs, objectTypes)} ${expr.op} ${genExpr(expr.right, varTypes, fnSigs, objectTypes)})`;
 
-        case 'Call':
+        case 'Call': {
+            const paramTypes = getFnParamTypes(fnSigs, expr.callee);
             if (expr.callee === 'read' || expr.callee === 'write') {
-                return `yap_${expr.callee}(${expr.args.map((arg) => genExpr(arg, varTypes, fnReturnTypes)).join(', ')})`;
+                return `yap_${expr.callee}(${expr.args.map((arg, index) => genExpr(arg, varTypes, fnSigs, objectTypes, paramTypes?.[index])).join(', ')})`;
             }
-            return `${expr.callee}(${expr.args.map((arg) => genExpr(arg, varTypes, fnReturnTypes)).join(', ')})`;
+            return `${expr.callee}(${expr.args.map((arg, index) => genExpr(arg, varTypes, fnSigs, objectTypes, paramTypes?.[index])).join(', ')})`;
+        }
 
         case 'ArrayLiteral':
-            return `{${expr.elements.map((element) => genExpr(element, varTypes, fnReturnTypes)).join(', ')}}`;
+            if (expectedType) {
+                const dynamicArray = parseDynamicArrayType(expectedType) ?? parseSymbolicArrayType(expectedType);
+                if (dynamicArray) {
+                    return genDynamicArrayLiteral(dynamicArray.baseType, expr, varTypes, fnSigs, objectTypes);
+                }
+            }
+            return `{${expr.elements.map((element) => genExpr(element, varTypes, fnSigs, objectTypes)).join(', ')}}`;
+
+        case 'ObjectLiteral': {
+            if (!expectedType) {
+                throw new Error('Object literals require an expected object type during code generation');
+            }
+            const objectDecl = getObjectType(expectedType, objectTypes);
+            if (!objectDecl) {
+                throw new Error(`Cannot render object literal for non-object type '${expectedType}'`);
+            }
+            const fieldInitializers = objectDecl.fields.map((field) => {
+                const provided = expr.fields.find((candidate) => candidate.name === field.name);
+                if (!provided) {
+                    throw new Error(`Missing field '${field.name}' for object literal '${expectedType}'`);
+                }
+                return `.${field.name} = ${genExpr(provided.value, varTypes, fnSigs, objectTypes, field.fieldType)}`;
+            });
+            return `(${mapTypeToC(expectedType, objectTypes)}){${fieldInitializers.join(', ')}}`;
+        }
 
         case 'ArrayLength': {
-            const arrayType = getArrayExprType(expr.array, varTypes, fnReturnTypes);
+            const arrayType = getArrayExprType(expr.array, varTypes, fnSigs, objectTypes);
             if (!arrayType) {
                 throw new Error('Cannot resolve array length for expression');
             }
             if ('size' in arrayType) {
                 return String(arrayType.size);
             }
-            return `${genExpr(expr.array, varTypes, fnReturnTypes)}.length`;
+            return `${genExpr(expr.array, varTypes, fnSigs, objectTypes)}.length`;
         }
 
         case 'IndexAccess':
-            return genArrayElementAccess(expr.array, expr.index, varTypes, fnReturnTypes);
+            return genArrayElementAccess(expr.array, expr.index, varTypes, fnSigs, objectTypes);
+
+        case 'PropertyAccess':
+            return `${genExpr(expr.object, varTypes, fnSigs, objectTypes)}.${expr.property}`;
 
         case 'ArrayPush': {
-            if (expr.array.kind !== 'Ident') {
-                throw new Error('push currently requires an array variable');
-            }
-            const arrayType = varTypes.get(expr.array.name);
+            const arrayType = getExprType(expr.array, varTypes, fnSigs, objectTypes);
             if (!arrayType || !isDynamicLikeArrayType(arrayType)) {
                 throw new Error('push requires a dynamic array variable');
             }
             const dynPush = parseDynamicArrayType(arrayType) ?? parseSymbolicArrayType(arrayType);
             const pushBaseType = dynPush!.baseType;
-            return `yap_array_${pushBaseType}_push(&${expr.array.name}, ${genExpr(expr.value, varTypes, fnReturnTypes)})`;
+            return `yap_array_${pushBaseType}_push(&${genExpr(expr.array, varTypes, fnSigs, objectTypes)}, ${genExpr(expr.value, varTypes, fnSigs, objectTypes, pushBaseType)})`;
         }
 
         case 'ArrayPop': {
-            if (expr.array.kind !== 'Ident') {
-                throw new Error('pop currently requires an array variable');
-            }
-            const arrayType = varTypes.get(expr.array.name);
+            const arrayType = getExprType(expr.array, varTypes, fnSigs, objectTypes);
             if (!arrayType || !isDynamicLikeArrayType(arrayType)) {
                 throw new Error('pop requires a dynamic array variable');
             }
             const dynPop = parseDynamicArrayType(arrayType) ?? parseSymbolicArrayType(arrayType);
             const popBaseType = dynPop!.baseType;
-            return `yap_array_${popBaseType}_pop(&${expr.array.name})`;
+            return `yap_array_${popBaseType}_pop(&${genExpr(expr.array, varTypes, fnSigs, objectTypes)})`;
         }
 
         case 'Boolean': {
@@ -78,18 +144,58 @@ export function genExpr(expr: Expr, varTypes: Map<string, string> = new Map(), f
     }
 }
 
+export function getExprType(
+    expr: Expr,
+    varTypes: Map<string, string>,
+    fnSigs: Map<string, CodegenFnSig | string>,
+    objectTypes: ObjectTypeMap,
+): string | null {
+    switch (expr.kind) {
+        case 'Ident':
+            return varTypes.get(expr.name) ?? null;
+        case 'Call':
+            return getFnReturnType(fnSigs, expr.callee) ?? null;
+        case 'PropertyAccess': {
+            const objectType = getExprType(expr.object, varTypes, fnSigs, objectTypes);
+            if (!objectType) {
+                return null;
+            }
+            const objectDecl = getObjectType(objectType, objectTypes);
+            const field = objectDecl?.fields.find((candidate) => candidate.name === expr.property);
+            return field?.fieldType ?? null;
+        }
+        case 'IndexAccess': {
+            const arrayType = getExprType(expr.array, varTypes, fnSigs, objectTypes);
+            const parsed = arrayType ? parseAnyArrayType(arrayType) : null;
+            return parsed?.baseType ?? null;
+        }
+        case 'String':
+            return 'string';
+        case 'Boolean':
+            return 'boolean';
+        case 'Number':
+            return 'int32';
+        case 'ArrayLength':
+            return 'int32';
+        case 'ArrayPop': {
+            const arrayType = getExprType(expr.array, varTypes, fnSigs, objectTypes);
+            const parsed = arrayType ? parseDynamicArrayType(arrayType) ?? parseSymbolicArrayType(arrayType) : null;
+            return parsed?.baseType ?? null;
+        }
+        default:
+            return null;
+    }
+}
+
 export function getFixedArrayExprType(
     expr: Expr,
     varTypes: Map<string, string>,
-    fnReturnTypes: Map<string, string>,
+    fnSigs: Map<string, CodegenFnSig | string>,
+    objectTypes: ObjectTypeMap,
 ) {
-    if (expr.kind === 'Call') {
-        const returnType = fnReturnTypes.get(expr.callee);
-        return returnType ? parseFixedArrayType(returnType) : null;
-    }
-    if (expr.kind === 'Ident') {
-        const varType = varTypes.get(expr.name);
-        return varType ? parseFixedArrayType(varType) : null;
+    const exprType = getExprType(expr, varTypes, fnSigs, objectTypes);
+    if (exprType) {
+        return parseFixedArrayType(exprType);
     }
     if (expr.kind === 'ArrayLiteral') {
         return {
@@ -103,15 +209,12 @@ export function getFixedArrayExprType(
 export function getArrayExprType(
     expr: Expr,
     varTypes: Map<string, string>,
-    fnReturnTypes: Map<string, string>,
+    fnSigs: Map<string, CodegenFnSig | string>,
+    objectTypes: ObjectTypeMap,
 ) {
-    if (expr.kind === 'Call') {
-        const returnType = fnReturnTypes.get(expr.callee);
-        return returnType ? parseAnyArrayType(returnType) : null;
-    }
-    if (expr.kind === 'Ident') {
-        const varType = varTypes.get(expr.name);
-        return varType ? parseAnyArrayType(varType) : null;
+    const exprType = getExprType(expr, varTypes, fnSigs, objectTypes);
+    if (exprType) {
+        return parseAnyArrayType(exprType);
     }
     if (expr.kind === 'ArrayLiteral') {
         return {
@@ -126,11 +229,12 @@ export function genArrayElementAccess(
     arrayExpr: Expr,
     indexExpr: Expr,
     varTypes: Map<string, string>,
-    fnReturnTypes: Map<string, string>,
+    fnSigs: Map<string, CodegenFnSig | string>,
+    objectTypes: ObjectTypeMap,
 ): string {
-    const arrayType = getArrayExprType(arrayExpr, varTypes, fnReturnTypes);
-    const renderedArray = genExpr(arrayExpr, varTypes, fnReturnTypes);
-    const renderedIndex = genExpr(indexExpr, varTypes, fnReturnTypes);
+    const arrayType = getArrayExprType(arrayExpr, varTypes, fnSigs, objectTypes);
+    const renderedArray = genExpr(arrayExpr, varTypes, fnSigs, objectTypes);
+    const renderedIndex = genExpr(indexExpr, varTypes, fnSigs, objectTypes);
 
     if (arrayType) {
         if (!('size' in arrayType)) {
@@ -141,7 +245,7 @@ export function genArrayElementAccess(
         }
     }
 
-    const varType = arrayExpr.kind === 'Ident' ? varTypes.get(arrayExpr.name) : undefined;
+    const varType = getExprType(arrayExpr, varTypes, fnSigs, objectTypes) ?? undefined;
     if (varType && isDynamicLikeArrayType(varType)) {
         return `${renderedArray}.data[${renderedIndex}]`;
     }
@@ -149,13 +253,14 @@ export function genArrayElementAccess(
     return `${renderedArray}[${renderedIndex}]`;
 }
 
-export function isStringExpr(expr: Expr, varTypes: Map<string, string>, fnReturnTypes: Map<string, string>): boolean {
-    if (expr.kind === 'String') return true;
-    if (expr.kind === 'Ident') return varTypes.get(expr.name) === 'string';
-    if (expr.kind === 'Call') return fnReturnTypes.get(expr.callee) === 'string';
-    if (expr.kind === 'IndexAccess' && expr.array.kind === 'Ident') {
-        const arrayType = varTypes.get(expr.array.name);
-        return arrayType === 'string[]' || Boolean(arrayType?.startsWith('string['));
+export function isStringExpr(
+    expr: Expr,
+    varTypes: Map<string, string>,
+    fnSigs: Map<string, CodegenFnSig | string>,
+    objectTypes: ObjectTypeMap,
+): boolean {
+    if (expr.kind === 'String') {
+        return true;
     }
-    return false;
+    return getExprType(expr, varTypes, fnSigs, objectTypes) === 'string';
 }

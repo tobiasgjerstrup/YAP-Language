@@ -4,6 +4,8 @@
 
 import { Stmt } from '../parser/parser.js';
 import {
+    getObjectType,
+    ObjectTypeMap,
     parseFixedArrayType,
     parseDynamicArrayType,
     parseSymbolicArrayType,
@@ -13,7 +15,7 @@ import {
     mapTypeToC,
     mapDynamicArrayCompoundLiteralType,
 } from './ctype-mapping.js';
-import { genExpr, getFixedArrayExprType, isStringExpr, genArrayElementAccess } from './expr-gen.js';
+import { CodegenFnSig, genExpr, getExprType, getFixedArrayExprType, isStringExpr, genArrayElementAccess } from './expr-gen.js';
 
 export interface FnCodegenContext {
     fnReturnType: string;
@@ -31,8 +33,9 @@ export function indent(s: string): string {
 export function genStmt(
     stmt: Stmt,
     varTypes: Map<string, string>,
-    fnReturnTypes: Map<string, string>,
+    fnSigs: Map<string, CodegenFnSig | string>,
     ctx: FnCodegenContext,
+    objectTypes: ObjectTypeMap = new Map(),
 ): string {
     switch (stmt.kind) {
         case 'VarDecl': {
@@ -47,21 +50,21 @@ export function genStmt(
 
                 const structName = `yap_array_${stmt.varType}`;
                 if (stmt.init.kind === 'ArrayLiteral') {
-                    const values = stmt.init.elements.map((element) => genExpr(element, varTypes, fnReturnTypes)).join(', ');
+                    const values = stmt.init.elements.map((element) => genExpr(element, varTypes, fnSigs, objectTypes, stmt.varType)).join(', ');
                     const count = stmt.init.elements.length;
                     const compoundType = mapDynamicArrayCompoundLiteralType(stmt.varType);
                     return `${structName} ${stmt.name} = ${structName}_from_values((${compoundType}){${values}}, ${count});`;
                 }
 
-                return `${structName} ${stmt.name} = ${genExpr(stmt.init, varTypes, fnReturnTypes)};`;
+                return `${structName} ${stmt.name} = ${genExpr(stmt.init, varTypes, fnSigs, objectTypes, `${stmt.varType}[]`)};`;
             }
 
             if (stmt.arraySize !== undefined) {
                 varTypes.set(stmt.name, `${stmt.varType}[${stmt.arraySize}]`);
                 if (stmt.init.kind === 'ArrayLiteral') {
-                    return `${mapTypeToC(stmt.varType)} ${stmt.name}[${stmt.arraySize}] = ${genExpr(stmt.init, varTypes, fnReturnTypes)};`;
+                    return `${mapTypeToC(stmt.varType, objectTypes)} ${stmt.name}[${stmt.arraySize}] = ${genExpr(stmt.init, varTypes, fnSigs, objectTypes, `${stmt.varType}[${stmt.arraySize}]`)};`;
                 }
-                const initArrayType = getFixedArrayExprType(stmt.init, varTypes, fnReturnTypes);
+                const initArrayType = getFixedArrayExprType(stmt.init, varTypes, fnSigs, objectTypes);
                 if (initArrayType) {
                     if (initArrayType.baseType !== stmt.varType) {
                         throw new Error(`Cannot initialize ${stmt.varType}[${stmt.arraySize}] from ${initArrayType.baseType}[${initArrayType.size}]`);
@@ -71,25 +74,33 @@ export function genStmt(
                     }
                     const sourceName = `__yap_init_${stmt.name}`;
                     const lines = [
-                        `${mapTypeToC(stmt.varType)} ${stmt.name}[${stmt.arraySize}] = {0};`,
-                        `${mapTypeToC(stmt.varType)}* ${sourceName} = ${genExpr(stmt.init, varTypes, fnReturnTypes)};`,
+                        `${mapTypeToC(stmt.varType, objectTypes)} ${stmt.name}[${stmt.arraySize}] = {0};`,
+                        `${mapTypeToC(stmt.varType, objectTypes)}* ${sourceName} = ${genExpr(stmt.init, varTypes, fnSigs, objectTypes)};`,
                     ];
                     for (let i = 0; i < stmt.arraySize; i++) {
                         lines.push(`${stmt.name}[${i}] = ${sourceName}[${i}];`);
                     }
                     return lines.join('\n');
                 }
-                return `${mapTypeToC(stmt.varType)} ${stmt.name}[${stmt.arraySize}] = {${genExpr(stmt.init, varTypes, fnReturnTypes)}};`;
+                return `${mapTypeToC(stmt.varType, objectTypes)} ${stmt.name}[${stmt.arraySize}] = {${genExpr(stmt.init, varTypes, fnSigs, objectTypes)}};`;
             }
             varTypes.set(stmt.name, stmt.varType);
-            return `${mapTypeToC(stmt.varType)} ${stmt.name} = ${genExpr(stmt.init, varTypes, fnReturnTypes)};`;
+            return `${mapTypeToC(stmt.varType, objectTypes)} ${stmt.name} = ${genExpr(stmt.init, varTypes, fnSigs, objectTypes, stmt.varType)};`;
         }
 
         case 'Assign':
-            return `${stmt.name} = ${genExpr(stmt.value, varTypes, fnReturnTypes)};`;
+            return `${stmt.name} = ${genExpr(stmt.value, varTypes, fnSigs, objectTypes, varTypes.get(stmt.name))};`;
 
         case 'IndexAssign':
-            return `${genArrayElementAccess(stmt.array, stmt.index, varTypes, fnReturnTypes)} = ${genExpr(stmt.value, varTypes, fnReturnTypes)};`;
+            return `${genArrayElementAccess(stmt.array, stmt.index, varTypes, fnSigs, objectTypes)} = ${genExpr(stmt.value, varTypes, fnSigs, objectTypes)};`;
+
+        case 'PropertyAssign': {
+            const objectType = getExprType(stmt.object, varTypes, fnSigs, objectTypes);
+            const fieldType = objectType
+                ? getObjectType(objectType, objectTypes)?.fields.find((field) => field.name === stmt.property)?.fieldType
+                : undefined;
+            return `${genExpr(stmt.object, varTypes, fnSigs, objectTypes)}.${stmt.property} = ${genExpr(stmt.value, varTypes, fnSigs, objectTypes, fieldType)};`;
+        }
 
         case 'Return':
             if (ctx.fnReturnArray && stmt.value.kind === 'ArrayLiteral') {
@@ -101,7 +112,7 @@ export function genStmt(
                 }
                 const lines: string[] = [];
                 for (let i = 0; i < elems.length; i++) {
-                    lines.push(`${ctx.fnReturnArray.bufferName}[${i}] = ${genExpr(elems[i], varTypes, fnReturnTypes)};`);
+                    lines.push(`${ctx.fnReturnArray.bufferName}[${i}] = ${genExpr(elems[i], varTypes, fnSigs, objectTypes)};`);
                 }
                 lines.push(`return ${ctx.fnReturnArray.bufferName};`);
                 return lines.join('\n');
@@ -112,41 +123,41 @@ export function genStmt(
                     .filter(([name]) => name !== returnedLocal)
                     .map(([name, baseType]) => `yap_array_${baseType}_free(&${name});`);
                 if (cleanup.length > 0) {
-                    return `${cleanup.join('\n')}\nreturn ${genExpr(stmt.value, varTypes, fnReturnTypes)};`;
+                    return `${cleanup.join('\n')}\nreturn ${genExpr(stmt.value, varTypes, fnSigs, objectTypes, ctx.fnReturnType)};`;
                 }
             }
-            return `return ${genExpr(stmt.value, varTypes, fnReturnTypes)};`;
+            return `return ${genExpr(stmt.value, varTypes, fnSigs, objectTypes, ctx.fnReturnType)};`;
 
         case 'Print': {
             const arg = stmt.arg;
-            if (isStringExpr(arg, varTypes, fnReturnTypes)) {
+            if (isStringExpr(arg, varTypes, fnSigs, objectTypes)) {
                 if (arg.kind === 'String') {
                     const escaped = arg.value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
                     return `printf("%s\\n", "${escaped}");`;
                 }
-                return `printf("%s\\n", ${genExpr(arg, varTypes, fnReturnTypes)});`;
+                return `printf("%s\\n", ${genExpr(arg, varTypes, fnSigs, objectTypes)});`;
             }
-            return `printf("%ld\\n", (long)(${genExpr(arg, varTypes, fnReturnTypes)}));`;
+            return `printf("%ld\\n", (long)(${genExpr(arg, varTypes, fnSigs, objectTypes)}));`;
         }
 
         case 'If': {
-            const cond = genExpr(stmt.cond, varTypes, fnReturnTypes);
-            const then = stmt.then.map((s) => indent(genStmt(s, varTypes, fnReturnTypes, ctx))).join('\n');
+            const cond = genExpr(stmt.cond, varTypes, fnSigs, objectTypes);
+            const then = stmt.then.map((s) => indent(genStmt(s, varTypes, fnSigs, ctx, objectTypes))).join('\n');
             let out = `if (${cond}) {\n${then}\n}`;
             if (stmt.else_.length > 0) {
-                const else_ = stmt.else_.map((s) => indent(genStmt(s, varTypes, fnReturnTypes, ctx))).join('\n');
+                const else_ = stmt.else_.map((s) => indent(genStmt(s, varTypes, fnSigs, ctx, objectTypes))).join('\n');
                 out += ` else {\n${else_}\n}`;
             }
             return out;
         }
 
         case 'While': {
-            const cond = genExpr(stmt.cond, varTypes, fnReturnTypes);
-            const body = stmt.body.map((s) => indent(genStmt(s, varTypes, fnReturnTypes, ctx))).join('\n');
+            const cond = genExpr(stmt.cond, varTypes, fnSigs, objectTypes);
+            const body = stmt.body.map((s) => indent(genStmt(s, varTypes, fnSigs, ctx, objectTypes))).join('\n');
             return `while (${cond}) {\n${body}\n}`;
         }
 
         case 'ExprStmt':
-            return `${genExpr(stmt.expr, varTypes, fnReturnTypes)};`;
+            return `${genExpr(stmt.expr, varTypes, fnSigs, objectTypes)};`;
     }
 }

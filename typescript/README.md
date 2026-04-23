@@ -421,6 +421,41 @@ Current limitations:
 - Other properties such as `.size` are rejected.
 - `.length` is resolved from the fixed array size known at compile time.
 
+## Object Types (New)
+
+YAP now supports named object types, object literals, property access, and property assignment.
+
+### Type Declarations
+
+Declare object schemas at top level with `type`:
+
+```yap
+type Profile = { name: string }
+type User = { profile: Profile, scores: int32[] }
+```
+
+### Object Literals and Property Access
+
+```yap
+type Profile = { name: string }
+type User = { profile: Profile, scores: int32[] }
+
+fn main() {
+    let user User = { profile: { name: "Ada" }, scores: [1, 2, 3] }
+    user.profile.name = "Grace"
+    print(user.profile.name)
+    print(user.scores.length)
+}
+```
+
+Notes:
+
+- Object fields are validated by name and type.
+- Missing required fields are rejected.
+- Unknown fields and unknown properties are rejected.
+- Objects can nest other objects and arrays.
+- Printing an object value directly is not supported; print specific fields instead.
+
 ## Array Semantics
 
 YAP's array support is intentionally simple.
@@ -508,17 +543,15 @@ args        := expr ("," expr)*
 The following are not implemented in the current compiler:
 
 - `bool`, `float`, or custom user-defined types.
-- Dynamic arrays.
-- Structs, enums, classes, or methods.
+- Structs/enums/classes as separate language constructs (use `type { ... }` object declarations).
+- Methods on objects.
 - `for` loops.
 - `break` and `continue`.
 - Logical operators such as `&&`, `||`, and `!`.
 - Modulo `%`.
 - Compound assignment such as `+=`.
 - Dedicated `else if` syntax.
-- Property access other than `.length`.
 - Block comments.
-- Type inference.
 - Lambdas or anonymous functions.
 
 ## Example

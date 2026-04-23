@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { Parser } from './parser/parser.js';
-import type { FnDecl } from './parser/parser.js';
+import type { FnDecl, ObjectTypeDecl, Program } from './parser/parser.js';
 import { generate } from './codegen/codegen.js';
 import { typecheckProgram } from './typecheck/typecheck.js';
 
@@ -22,10 +22,12 @@ function resolveImportPath(fromFile: string, importPath: string): string {
     throw new Error(`Import not found: '${importPath}' (from ${fromFile})`);
 }
 
-function loadProgramFromFile(entryPath: string): { fns: FnDecl[] } {
+function loadProgramFromFile(entryPath: string): Program {
     const visited = new Set<string>();
     const resolving = new Set<string>();
     const allFns: FnDecl[] = [];
+    const allObjectTypes: ObjectTypeDecl[] = [];
+    const seenObjectTypeNames = new Set<string>();
 
     const visit = (filePath: string): void => {
         const absolutePath = path.resolve(filePath);
@@ -46,6 +48,13 @@ function loadProgramFromFile(entryPath: string): { fns: FnDecl[] } {
                 visit(importedFilePath);
             }
 
+            for (const objectType of program.objectTypes ?? []) {
+                if (seenObjectTypeNames.has(objectType.name)) {
+                    throw new Error(`Duplicate object type declaration '${objectType.name}'`);
+                }
+                seenObjectTypeNames.add(objectType.name);
+                allObjectTypes.push(objectType);
+            }
             allFns.push(...program.fns);
             visited.add(absolutePath);
         } finally {
@@ -54,6 +63,9 @@ function loadProgramFromFile(entryPath: string): { fns: FnDecl[] } {
     };
 
     visit(entryPath);
+    if (allObjectTypes.length > 0) {
+        return { fns: allFns, objectTypes: allObjectTypes };
+    }
     return { fns: allFns };
 }
 
