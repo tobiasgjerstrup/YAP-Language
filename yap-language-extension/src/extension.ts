@@ -1,4 +1,8 @@
 import * as vscode from 'vscode';
+import {
+  BASIC_COMPLETION_ENTRIES,
+  BUILTIN_DOCS
+} from './completion-metadata';
 
 export function activate(context: vscode.ExtensionContext) {
   const provider = vscode.languages.registerCompletionItemProvider(
@@ -6,59 +10,9 @@ export function activate(context: vscode.ExtensionContext) {
     {
       provideCompletionItems(document, position, token, context) {
         const completions: vscode.CompletionItem[] = [];
-        const mathModule = 'std/Math';
-
-        // Keywords
-        completions.push(createCompletion('var', 'var ${1:name} = ${2:value};', vscode.CompletionItemKind.Keyword, 'Variable declaration'));
-        completions.push(createCompletion('fn', 'fn ${1:name}(${2:params}) {\n\t${3:// body}\n}', vscode.CompletionItemKind.Keyword, 'Function declaration'));
-        completions.push(createCompletion('export fn', 'export fn ${1:name}(${2:params}) {\n\t${3:// body}\n}', vscode.CompletionItemKind.Keyword, 'Exported function declaration'));
-        completions.push(createCompletion('if', 'if (${1:condition}) {\n\t${2:// code}\n}', vscode.CompletionItemKind.Keyword, 'If statement'));
-        completions.push(createCompletion('else', 'else {\n\t${1:// code}\n}', vscode.CompletionItemKind.Keyword, 'Else statement'));
-        completions.push(createCompletion('while', 'while (${1:condition}) {\n\t${2:// code}\n}', vscode.CompletionItemKind.Keyword, 'While loop'));
-        completions.push(createCompletion('try', 'try {\n\t${1:// code}\n} catch (${2:error}) {\n\t${3:// handle}\n} finally {\n\t${4:// cleanup}\n}', vscode.CompletionItemKind.Keyword, 'Try/catch/finally block'));
-        completions.push(createCompletion('catch', 'catch (${1:error}) {\n\t${2:// handle}\n}', vscode.CompletionItemKind.Keyword, 'Catch block'));
-        completions.push(createCompletion('finally', 'finally {\n\t${1:// cleanup}\n}', vscode.CompletionItemKind.Keyword, 'Finally block'));
-        completions.push(createCompletion('throw', 'throw "${1:message}";', vscode.CompletionItemKind.Keyword, 'Throw error'));
-        completions.push(createCompletion('return', 'return ${1:value};', vscode.CompletionItemKind.Keyword, 'Return statement'));
-        completions.push(createCompletion('import', 'import { ${1:name} } from "${2:path}";', vscode.CompletionItemKind.Keyword, 'Import named exports'));
-        completions.push(createCompletion('import all', 'import "${1:path}";', vscode.CompletionItemKind.Keyword, 'Import all exports'));
-
-        // Built-in functions
-        completions.push(createCompletion('print', 'print(${1:value});', vscode.CompletionItemKind.Function, 'Print to console'));
-        completions.push(createCompletion('read', 'read("${1:path}")', vscode.CompletionItemKind.Function, 'Read file contents'));
-        completions.push(createCompletion('write', 'write("${1:path}", ${2:content});', vscode.CompletionItemKind.Function, 'Write file contents'));
-        completions.push(createCompletion('append', 'append("${1:path}", ${2:content});', vscode.CompletionItemKind.Function, 'Append file contents'));
-        completions.push(createCompletion('push', 'push(${1:array}, ${2:value})', vscode.CompletionItemKind.Function, 'Push value to array'));
-        completions.push(createCompletion('pop', 'pop(${1:array})', vscode.CompletionItemKind.Function, 'Pop value from array'));
-        completions.push(createCompletion('random', 'random()', vscode.CompletionItemKind.Function, 'Random integer'));
-        completions.push(createCompletion('timestamp', 'timestamp()', vscode.CompletionItemKind.Function, 'Unix timestamp (seconds)'));
-
-        // Standard library (std/Math) with auto-import
-        const mathFunctions: Array<{ name: string; snippet: string; doc: string }> = [
-          { name: 'abs', snippet: 'abs(${1:x})', doc: 'Math.abs (std/Math)' },
-          { name: 'sign', snippet: 'sign(${1:x})', doc: 'Math.sign (std/Math)' },
-          { name: 'max', snippet: 'max(${1:a}, ${2:b})', doc: 'Math.max (std/Math)' },
-          { name: 'min', snippet: 'min(${1:a}, ${2:b})', doc: 'Math.min (std/Math)' },
-          { name: 'clamp', snippet: 'clamp(${1:x}, ${2:lo}, ${3:hi})', doc: 'Math.clamp (std/Math)' },
-          { name: 'is_even', snippet: 'is_even(${1:x})', doc: 'Math.is_even (std/Math)' },
-          { name: 'is_odd', snippet: 'is_odd(${1:x})', doc: 'Math.is_odd (std/Math)' },
-          { name: 'pow', snippet: 'pow(${1:base}, ${2:exp})', doc: 'Math.pow (std/Math)' },
-          { name: 'gcd', snippet: 'gcd(${1:a}, ${2:b})', doc: 'Math.gcd (std/Math)' },
-          { name: 'lcm', snippet: 'lcm(${1:a}, ${2:b})', doc: 'Math.lcm (std/Math)' },
-          { name: 'factorial', snippet: 'factorial(${1:n})', doc: 'Math.factorial (std/Math)' },
-          { name: 'int_sqrt', snippet: 'int_sqrt(${1:n})', doc: 'Math.int_sqrt (std/Math)' }
-        ];
-
-        for (const fn of mathFunctions) {
-          completions.push(createAutoImportCompletion(document, fn.name, fn.snippet, fn.doc, mathModule));
+        for (const entry of BASIC_COMPLETION_ENTRIES) {
+          completions.push(createCompletion(entry.label, entry.insertText, entry.kind, entry.documentation));
         }
-
-        // Constants
-        completions.push(createCompletion('true', 'true', vscode.CompletionItemKind.Constant, 'Boolean true'));
-        completions.push(createCompletion('false', 'false', vscode.CompletionItemKind.Constant, 'Boolean false'));
-
-        // Built-in variables
-        completions.push(createCompletion('args', 'args', vscode.CompletionItemKind.Variable, 'Program arguments array'));
 
         return completions;
       }
@@ -164,45 +118,12 @@ function createCompletion(
 export function deactivate() {}
 
 function getBuiltinDoc(name: string): string | null {
-  const docs: Record<string, string> = {
-    // Direct C functions
-    print: '**print**\n\nPrints a value with a newline.\n\n`print(value);`',
-    read: '**read**\n\nReads a file and returns its contents as a string.\n\n`read("path")`',
-    write: '**write**\n\nWrites a string to a file (overwrites). Returns 0 on success.\n\n`write("path", content);`',
-    append: '**append**\n\nAppends a string to a file. Returns 0 on success.\n\n`append("path", content);`',
-    push: '**push**\n\nReturns a new array with the value appended.\n\n`push(array, value)`',
-    pop: '**pop**\n\nRemoves and returns the last element of an array.\n\n`pop(array)`',
-    random: '**random**\n\nReturns a non-negative random integer.\n\n`random()`',
-    timestamp: '**timestamp**\n\nReturns the current Unix timestamp (seconds).\n\n`timestamp()`',
-
-    // std/Math functions
-    abs: '**abs** (std/Math)\n\nAbsolute value.\n\n`abs(x)`',
-    sign: '**sign** (std/Math)\n\nSign of a number (-1, 0, 1).\n\n`sign(x)`',
-    max: '**max** (std/Math)\n\nMaximum of two numbers.\n\n`max(a, b)`',
-    min: '**min** (std/Math)\n\nMinimum of two numbers.\n\n`min(a, b)`',
-    clamp: '**clamp** (std/Math)\n\nClamp a number to [lo, hi].\n\n`clamp(x, lo, hi)`',
-    is_even: '**is_even** (std/Math)\n\nTrue if the number is even.\n\n`is_even(x)`',
-    is_odd: '**is_odd** (std/Math)\n\nTrue if the number is odd.\n\n`is_odd(x)`',
-    pow: '**pow** (std/Math)\n\nPower function.\n\n`pow(base, exp)`',
-    gcd: '**gcd** (std/Math)\n\nGreatest common divisor.\n\n`gcd(a, b)`',
-    lcm: '**lcm** (std/Math)\n\nLeast common multiple.\n\n`lcm(a, b)`',
-    factorial: '**factorial** (std/Math)\n\nFactorial of n.\n\n`factorial(n)`',
-    int_sqrt: '**int_sqrt** (std/Math)\n\nInteger square root (floor).\n\n`int_sqrt(n)`',
-
-    // Keywords and built-in variables
-    try: '**try**\n\nStarts a try/catch/finally block.\n\n`try {\n\t// code\n} catch (error) {\n\t// handle\n} finally {\n\t// cleanup\n}`',
-    catch: '**catch**\n\nStarts a catch block (used with try).\n\n`catch (error) {\n\t// handle\n}`',
-    finally: '**finally**\n\nStarts a finally block (used with try).\n\n`finally {\n\t// cleanup\n}`',
-    throw: '**throw**\n\nThrows an error.\n\n`throw "message";`',
-    args: '**args**\n\nArray of command-line arguments passed to the program.\n\n`args`'
-  };
-
-  return docs[name] || null;
+  return BUILTIN_DOCS[name] || null;
 }
 
 function buildUserFunctionHover(document: vscode.TextDocument, name: string): vscode.MarkdownString | null {
   const text = document.getText();
-  const regex = new RegExp(`\\b(?:export\\s+)?fn\\s+${escapeRegExp(name)}\\s*\\(([^)]*)\\)`);
+  const regex = new RegExp(`\\bfn\\s+${escapeRegExp(name)}\\s*\\(([^)]*)\\)`);
   const match = regex.exec(text);
   if (!match || typeof match.index !== 'number') {
     return null;
@@ -237,7 +158,7 @@ function buildUserVariableHover(
   position: vscode.Position
 ): vscode.MarkdownString | null {
   const text = document.getText();
-  const regex = new RegExp(`\\bvar\\s+${escapeRegExp(name)}\\b([^;]*)`, 'g');
+  const regex = new RegExp(`\\blet\\s+${escapeRegExp(name)}\\b([^;]*)`, 'g');
   let match: RegExpExecArray | null = null;
   let bestMatch: RegExpExecArray | null = null;
   let bestLine = -1;
@@ -259,7 +180,7 @@ function buildUserVariableHover(
 
   const defLine = document.positionAt(bestMatch.index).line;
   const tail = bestMatch[1] ? bestMatch[1].trim() : '';
-  const signature = tail.length > 0 ? `var ${name}${tail}` : `var ${name}`;
+  const signature = tail.length > 0 ? `let ${name}${tail}` : `let ${name}`;
 
   const docLines: string[] = [];
   for (let line = defLine - 1; line >= 0; line--) {
@@ -280,65 +201,6 @@ function buildUserVariableHover(
   return md;
 }
 
-function createAutoImportCompletion(
-  document: vscode.TextDocument,
-  label: string,
-  insertText: string,
-  documentation: string,
-  modulePath: string
-): vscode.CompletionItem {
-  const item = createCompletion(label, insertText, vscode.CompletionItemKind.Function, documentation);
-  const edits = buildAutoImportEdits(document, label, modulePath);
-  if (edits.length > 0) {
-    item.additionalTextEdits = edits;
-  }
-  return item;
-}
-
-function buildAutoImportEdits(
-  document: vscode.TextDocument,
-  symbol: string,
-  modulePath: string
-): vscode.TextEdit[] {
-  const text = document.getText();
-  const lines = text.split(/\r?\n/);
-
-  const importAllRegex = new RegExp(`^\\s*import\\s+["']${escapeRegExp(modulePath)}["']\\s*;`, 'm');
-  if (importAllRegex.test(text)) {
-    return [];
-  }
-
-  const namedImportRegex = new RegExp(`^\\s*import\\s*\\{([^}]*)\\}\\s*from\\s*["']${escapeRegExp(modulePath)}["']\\s*;`, 'm');
-  const match = text.match(namedImportRegex);
-  if (match && typeof match.index === 'number') {
-    const existingList = match[1].split(',').map(s => s.trim()).filter(Boolean);
-    if (existingList.includes(symbol)) {
-      return [];
-    }
-
-    const line = text.slice(0, match.index).split(/\r?\n/).length - 1;
-    const lineText = lines[line];
-    const startIndex = lineText.indexOf('{');
-    const endIndex = lineText.indexOf('}');
-    if (startIndex >= 0 && endIndex > startIndex) {
-      const insertPos = new vscode.Position(line, endIndex);
-      const prefix = existingList.length > 0 ? ', ' : ' ';
-      return [vscode.TextEdit.insert(insertPos, `${prefix}${symbol}`)];
-    }
-  }
-
-  let insertLine = 0;
-  for (let i = 0; i < lines.length; i++) {
-    if (/^\s*import\b/.test(lines[i])) {
-      insertLine = i + 1;
-    }
-  }
-
-  const importLine = `import { ${symbol} } from "${modulePath}";`;
-  const insertPos = new vscode.Position(insertLine, 0);
-  const suffix = insertLine < lines.length ? '\n' : '';
-  return [vscode.TextEdit.insert(insertPos, `${importLine}${suffix}`)];
-}
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -349,7 +211,7 @@ function findFunctionDefinitionInDocument(
   name: string
 ): vscode.Location | null {
   const text = document.getText();
-  const regex = new RegExp(`\\b(?:export\\s+)?fn\\s+${escapeRegExp(name)}\\b`);
+  const regex = new RegExp(`\\bfn\\s+${escapeRegExp(name)}\\b`);
   const match = regex.exec(text);
   if (!match || typeof match.index !== 'number') {
     return null;
@@ -404,7 +266,7 @@ function findVariableDefinitionInDocument(
   name: string
 ): vscode.Location | null {
   const text = document.getText();
-  const regex = new RegExp(`\\bvar\\s+${escapeRegExp(name)}\\b`);
+  const regex = new RegExp(`\\blet\\s+${escapeRegExp(name)}\\b`);
   const match = regex.exec(text);
   if (!match || typeof match.index !== 'number') {
     return null;
