@@ -1,1 +1,0 @@
-make clean && make && ./bin/yap transpile/full_test.yap --transpile-c -o transpile/out.c && gcc transpile/out.c -o transpile/out && ./transpile/out
