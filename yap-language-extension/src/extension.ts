@@ -10,8 +10,38 @@ export function activate(context: vscode.ExtensionContext) {
     {
       provideCompletionItems(document, position, token, context) {
         const completions: vscode.CompletionItem[] = [];
+        
+        // Add built-in completions
+        const builtInLabels = new Set<string>();
         for (const entry of BASIC_COMPLETION_ENTRIES) {
           completions.push(createCompletion(entry.label, entry.insertText, entry.kind, entry.documentation));
+          builtInLabels.add(entry.label);
+        }
+
+        // Add user-defined variables from current document
+        const variables = extractVariablesFromDocument(document);
+        for (const varName of variables) {
+          if (!builtInLabels.has(varName)) {
+            completions.push(createCompletion(
+              varName,
+              varName,
+              vscode.CompletionItemKind.Variable,
+              `Variable: ${varName}`
+            ));
+          }
+        }
+
+        // Add user-defined functions from current document
+        const functions = extractFunctionsFromDocument(document);
+        for (const fnName of functions) {
+          if (!builtInLabels.has(fnName)) {
+            completions.push(createCompletion(
+              fnName,
+              `${fnName}()`,
+              vscode.CompletionItemKind.Function,
+              `Function: ${fnName}`
+            ));
+          }
         }
 
         return completions;
@@ -119,6 +149,32 @@ export function deactivate() {}
 
 function getBuiltinDoc(name: string): string | null {
   return BUILTIN_DOCS[name] || null;
+}
+
+function extractVariablesFromDocument(document: vscode.TextDocument): Set<string> {
+  const variables = new Set<string>();
+  const text = document.getText();
+  const regex = /\blet\s+([A-Za-z_][A-Za-z0-9_]*)\b/g;
+  let match: RegExpExecArray | null;
+
+  while ((match = regex.exec(text)) !== null) {
+    variables.add(match[1]);
+  }
+
+  return variables;
+}
+
+function extractFunctionsFromDocument(document: vscode.TextDocument): Set<string> {
+  const functions = new Set<string>();
+  const text = document.getText();
+  const regex = /\bfn\s+([A-Za-z_][A-Za-z0-9_]*)\b/g;
+  let match: RegExpExecArray | null;
+
+  while ((match = regex.exec(text)) !== null) {
+    functions.add(match[1]);
+  }
+
+  return functions;
 }
 
 function buildUserFunctionHover(document: vscode.TextDocument, name: string): vscode.MarkdownString | null {
